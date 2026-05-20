@@ -10,7 +10,10 @@ declare global {
 export const prisma =
   globalThis.prisma ??
   new PrismaClient({
-    adapter: new PrismaPg({ connectionString: env.databaseUrl }),
+    adapter: new PrismaPg({
+      connectionString: env.databaseUrl,
+      ssl: env.databaseUrl.includes("sslmode=") ? { rejectUnauthorized: false } : undefined,
+    }),
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 
