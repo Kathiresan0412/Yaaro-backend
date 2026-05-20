@@ -36,7 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { app } = await import("../src/app");
+    const { app } = await import("../src/app.js");
     app(req, res);
   } catch (error) {
     console.error("Failed to load API app", error);
