@@ -1,25 +1,35 @@
 {
   "version": 2,
-  "rewrites": [
+  "builds": [
     {
-      "source": "/",
-      "destination": "/api/status"
+      "src": "api/index.ts",
+      "use": "@vercel/node"
     },
     {
-      "source": "/status",
-      "destination": "/api/status"
+      "src": "api/status.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/api/status.ts"
     },
     {
-      "source": "/api/status",
-      "destination": "/api/status"
+      "src": "/status",
+      "dest": "/api/status.ts"
     },
     {
-      "source": "/api/v1/(.*)",
-      "destination": "/api"
+      "src": "/api/status",
+      "dest": "/api/status.ts"
     },
     {
-      "source": "/api/(.*)",
-      "destination": "/api"
+      "src": "/api/v1/(.*)",
+      "dest": "/api/index.ts"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.ts"
     }
   ]
 }
