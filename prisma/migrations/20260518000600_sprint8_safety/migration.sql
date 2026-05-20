@@ -1,0 +1,13 @@
+ALTER TYPE "ReportReason" ADD VALUE IF NOT EXISTS 'underage';
+
+ALTER TABLE "reports"
+  ADD COLUMN IF NOT EXISTS "screenshot_url" VARCHAR(500);
+
+ALTER TABLE "verifications"
+  ALTER COLUMN "id_type" DROP NOT NULL,
+  ALTER COLUMN "id_front_url" DROP NOT NULL,
+  ALTER COLUMN "selfie_url" DROP NOT NULL,
+  ADD COLUMN IF NOT EXISTS "photo_verified" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "id_verified" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "photo_verified_at" TIMESTAMP(0),
+  ADD COLUMN IF NOT EXISTS "id_verified_at" TIMESTAMP(0);
