@@ -170,53 +170,52 @@ async function exploreCards(
   filter: (candidate: Candidate, distanceKm: number | null) => boolean,
   limit = 24,
 ) {
-  const [viewer, preferences, swipes, receivedLikes, blocks, candidates] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: viewerId },
-      include: { onboardingProfile: true, hobbies: true, location: true },
-    }),
-    prisma.userPreference.upsert({
-      where: { userId: viewerId },
-      update: {},
-      create: { userId: viewerId },
-    }),
-    prisma.swipe.findMany({ where: { swiperId: viewerId }, select: { swipedId: true } }),
-    prisma.swipe.findMany({
-      where: { swipedId: viewerId, action: { in: ["like", "superlike"] } },
-      select: { swiperId: true },
-    }),
-    prisma.block.findMany({
-      where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
-      select: { blockerId: true, blockedId: true },
-    }),
-    prisma.user.findMany({
-      where: {
-        id: { not: viewerId },
-        onboardingCompleted: true,
-        isActive: true,
-        isBanned: false,
-        status: "active",
-        onboardingProfile: { isNot: null },
-        profile: { isNot: null },
-      },
-      include: {
-        onboardingProfile: true,
-        hobbies: true,
-        onboardingPhotos: { orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }] },
-        location: true,
-        profile: true,
-        discoveryPreference: true,
-        boosts: {
-          where: { startedAt: { lte: new Date() }, endsAt: { gt: new Date() } },
-          select: { id: true, endsAt: true },
-        },
-      },
-    }),
-  ]);
+  const viewer = await prisma.user.findUnique({
+    where: { id: viewerId },
+    include: { onboardingProfile: true, hobbies: true, location: true },
+  });
 
   if (!viewer) {
     return null;
   }
+
+  const preferences = await prisma.userPreference.upsert({
+    where: { userId: viewerId },
+    update: {},
+    create: { userId: viewerId },
+  });
+  const swipes = await prisma.swipe.findMany({ where: { swiperId: viewerId }, select: { swipedId: true } });
+  const receivedLikes = await prisma.swipe.findMany({
+    where: { swipedId: viewerId, action: { in: ["like", "superlike"] } },
+    select: { swiperId: true },
+  });
+  const blocks = await prisma.block.findMany({
+    where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
+    select: { blockerId: true, blockedId: true },
+  });
+  const candidates = await prisma.user.findMany({
+    where: {
+      id: { not: viewerId },
+      onboardingCompleted: true,
+      isActive: true,
+      isBanned: false,
+      status: "active",
+      onboardingProfile: { isNot: null },
+      profile: { isNot: null },
+    },
+    include: {
+      onboardingProfile: true,
+      hobbies: true,
+      onboardingPhotos: { orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }] },
+      location: true,
+      profile: true,
+      discoveryPreference: true,
+      boosts: {
+        where: { startedAt: { lte: new Date() }, endsAt: { gt: new Date() } },
+        select: { id: true, endsAt: true },
+      },
+    },
+  });
 
   const swipedIds = new Set(swipes.map((swipe) => swipe.swipedId.toString()));
   const receivedLikeIds = new Set(receivedLikes.map((swipe) => swipe.swiperId.toString()));

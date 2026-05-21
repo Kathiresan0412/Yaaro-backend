@@ -27,7 +27,14 @@ function isEmail(value: string) {
 function isStrongPassword(value: string) {
   return /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(value);
 }
-
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 function isAdult(dateValue: string) {
   const birthDate = new Date(`${dateValue}T00:00:00.000Z`);
 
@@ -140,10 +147,67 @@ async function createSession(user: {
   return { accessToken, refreshToken };
 }
 
+// async function sendAccountEmail(kind: "verify" | "reset", email: string, url: string) {
+//   const label = kind === "verify" ? "Verify email" : "Reset password";
+//   const subject = kind === "verify" ? "Verify your Yaro0 email" : "Reset your Yaro0 password";
+//   const action = kind === "verify" ? "verify your email" : "reset your password";
+
+//   if (!env.smtpHost || !env.smtpUser || !env.smtpPassword || !env.mailFrom) {
+//     console.log(`[mail:${kind}] SMTP is not configured. ${label} for ${email}: ${url}`);
+//     return { sent: false, reason: "smtp-not-configured" as const };
+//   }
+
+//   const transporter = nodemailer.createTransport({
+//     host: env.smtpHost,
+//     port: env.smtpPort,
+//     secure: env.smtpSecure,
+//     auth: {
+//       user: env.smtpUser,
+//       pass: env.smtpPassword,
+//     },
+//   });
+
+//   await transporter.sendMail({
+//     from: env.mailFrom,
+//     to: email,
+//     subject,
+//     text: `Use this link to ${action}: ${url}`,
+//     html: `
+//       <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+//         <h1 style="font-size:22px;margin:0 0 12px">${subject}</h1>
+//         <p>Use the button below to ${action}.</p>
+//         <p>
+//           <a href="${url}" style="display:inline-block;background:#ea6f61;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700">
+//             ${label}
+//           </a>
+//         </p>
+//         <p>If the button does not work, open this link:</p>
+//         <p><a href="${url}">${url}</a></p>
+//       </div>
+//     `,
+//   });
+
+//   return { sent: true, reason: null };
+// }
 async function sendAccountEmail(kind: "verify" | "reset", email: string, url: string) {
-  const label = kind === "verify" ? "Verify email" : "Reset password";
-  const subject = kind === "verify" ? "Verify your Yaro0 email" : "Reset your Yaro0 password";
+  const label = kind === "verify" ? "Verify my email" : "Reset password";
+  const subject = kind === "verify" ? "Verify your Yaaro0 email" : "Reset your Yaaro0 password";
   const action = kind === "verify" ? "verify your email" : "reset your password";
+  const title =
+    kind === "verify"
+      ? "Welcome to Yaaro0 - Please verify your email"
+      : "Reset your Yaaro0 password";
+  const intro =
+    kind === "verify"
+      ? "We are happy to welcome you to Yaaro0, a private space for Tamil dating, friendship, and meaningful matches. Before you dive in, please verify your email address to activate your account."
+      : "We received a request to reset your Yaaro0 password. Use the button below to choose a new password and get back into your account.";
+  const closing =
+    kind === "verify"
+      ? "Once verified, you will be all set to complete your profile, discover matches, and start safer conversations. If you did not sign up for Yaaro0, you can safely ignore this email."
+      : "This password reset link is temporary. If you did not request it, you can safely ignore this email and your password will stay unchanged.";
+  const escapedEmail = escapeHtml(email);
+  const escapedUrl = escapeHtml(url);
+  const mailtoEmail = encodeURIComponent(email);
 
   if (!env.smtpHost || !env.smtpUser || !env.smtpPassword || !env.mailFrom) {
     console.log(`[mail:${kind}] SMTP is not configured. ${label} for ${email}: ${url}`);
@@ -164,19 +228,59 @@ async function sendAccountEmail(kind: "verify" | "reset", email: string, url: st
     from: env.mailFrom,
     to: email,
     subject,
-    text: `Use this link to ${action}: ${url}`,
+    text: `${title}\n\nHi ${email},\n\n${intro}\n\nUse this link to ${action}: ${url}\n\n${closing}\n\nBest regards,\nYaaro0 Team`,
     html: `
-      <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
-        <h1 style="font-size:22px;margin:0 0 12px">${subject}</h1>
-        <p>Use the button below to ${action}.</p>
-        <p>
-          <a href="${url}" style="display:inline-block;background:#ea6f61;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700">
-            ${label}
-          </a>
-        </p>
-        <p>If the button does not work, open this link:</p>
-        <p><a href="${url}">${url}</a></p>
-      </div>
+      <!doctype html>
+      <html>
+        <body style="margin:0;padding:0;background:#fff7fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff7fb;margin:0;padding:32px 16px">
+            <tr>
+              <td align="center">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:18px;overflow:hidden">
+                  <tr>
+                    <td align="center" style="background:#fff0f6;padding:30px 24px;border-bottom:1px solid #ffe0ec">
+                      <div style="font-size:34px;font-weight:800;color:#FD267A;letter-spacing:0">Yaaro0</div>
+                      <div style="height:4px;width:92px;background:linear-gradient(90deg,#FF6036,#FD267A);border-radius:999px;margin:12px auto 0"></div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:44px 48px 24px">
+                      <h1 style="margin:0 0 24px;font-size:22px;line-height:1.35;color:#111827;font-weight:800">${title}</h1>
+                      <p style="margin:0 0 22px;font-size:16px;line-height:1.65;color:#374151">Hi <a href="mailto:${mailtoEmail}" style="color:#FD267A;text-decoration:underline">${escapedEmail}</a>,</p>
+                      <p style="margin:0 0 24px;font-size:16px;line-height:1.65;color:#374151">${intro}</p>
+                      <p style="margin:0 0 28px;font-size:16px;line-height:1.65;color:#374151">Click the button below to confirm:</p>
+                      <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 28px">
+                        <tr>
+                          <td bgcolor="#FD267A" style="border-radius:10px;background:linear-gradient(90deg,#FF6036,#FD267A)">
+                            <a href="${escapedUrl}" style="display:inline-block;padding:16px 34px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;border-radius:10px">
+                              ${label}
+                            </a>
+                          </td>
+                        </tr>
+                      </table>
+                      <p style="margin:0 0 22px;font-size:16px;line-height:1.65;color:#374151">${closing}</p>
+                      <p style="margin:0;font-size:16px;line-height:1.65;color:#374151">Best regards,<br>Yaaro0 Team</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:0 48px 44px">
+                      <div style="background:#f9fafb;border:1px solid #f3f4f6;border-radius:12px;padding:18px 22px;font-size:14px;line-height:1.55;color:#6b7280">
+                        If the button does not work, open this link:<br>
+                        <a href="${escapedUrl}" style="color:#FD267A;text-decoration:underline;word-break:break-all">${escapedUrl}</a>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:20px 32px;background:#111827;color:#d1d5db;text-align:center;font-size:13px;line-height:1.5">
+                      Need help? Reply to this email or contact the Yaaro0 support team.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+      </html>
     `,
   });
 
