@@ -50,6 +50,23 @@ type Candidate = {
   }[];
 };
 
+type DiscoveryCard = {
+  id: string;
+  displayName: string;
+  age: number;
+  distanceKm: number | null;
+  headline: string;
+  mainPhotoUrl: string | null;
+  photos: Array<{ id: string; url: string; isPrimary: boolean }>;
+  city: string | null;
+  country: string | null;
+  isVerified: boolean;
+  isBoosted: boolean;
+  sharedInterests: string[];
+  compatibilityScore: number;
+  profile: ReturnType<typeof publicProfileDetails>;
+};
+
 function currentUserId(req: AuthenticatedRequest) {
   if (!req.auth?.userId) {
     throw new Error("Authenticated user missing.");
@@ -308,8 +325,10 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
     const viewerLongitude = effectiveLongitude(viewer.location);
     const viewerHobbies = viewer.hobbies.map((item) => item.hobby);
 
-    const cards = candidates
-      .flatMap((candidate) => {
+    const distanceFallbackCards: DiscoveryCard[] = [];
+
+    const cards: DiscoveryCard[] = candidates
+      .flatMap<DiscoveryCard>((candidate) => {
         if (!candidate.profile || swipedIds.has(candidate.id.toString()) || blockedIds.has(candidate.id.toString())) {
           return [];
         }
@@ -340,13 +359,10 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
             ? haversineKm(viewerLatitude, viewerLongitude, candidateLatitude, candidateLongitude)
             : null;
 
-        if (
+        const outsideDistance =
           !preferences.globalMode &&
           distanceKm !== null &&
-          distanceKm > preferences.maxDistanceKm
-        ) {
-          return [];
-        }
+          distanceKm > preferences.maxDistanceKm;
 
         const photos = candidate.onboardingPhotos;
         if (preferences.showPhotosOnly && photos.length === 0) {
@@ -362,34 +378,47 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
           },
         );
 
-        return [
-          {
-            id: candidate.id.toString(),
-            displayName:
-              candidate.onboardingProfile?.displayName ||
-              [candidate.firstName, candidate.lastName].filter(Boolean).join(" ") ||
-              "Yaaro member",
-            age,
-            distanceKm: distanceKm === null ? null : Math.round(distanceKm),
-            headline: candidate.onboardingProfile?.headline ?? "",
-            mainPhotoUrl: photos[0]?.url ?? null,
-            photos: photos.map((photo) => ({
-              id: photo.id.toString(),
-              url: photo.url,
-              isPrimary: photo.isPrimary,
-            })),
-            city: candidate.location?.city ?? null,
-            country: candidate.location?.country ?? null,
-            isVerified: candidate.profile.isVerified,
-            isBoosted: candidate.boosts.length > 0,
-            sharedInterests: sharedHobbies,
-            compatibilityScore: score,
-            profile: publicProfileDetails(candidate),
-          },
-        ];
+        const card: DiscoveryCard = {
+          id: candidate.id.toString(),
+          displayName:
+            candidate.onboardingProfile?.displayName ||
+            [candidate.firstName, candidate.lastName].filter(Boolean).join(" ") ||
+            "Yaaro member",
+          age,
+          distanceKm: distanceKm === null ? null : Math.round(distanceKm),
+          headline: candidate.onboardingProfile?.headline ?? "",
+          mainPhotoUrl: photos[0]?.url ?? null,
+          photos: photos.map((photo) => ({
+            id: photo.id.toString(),
+            url: photo.url,
+            isPrimary: photo.isPrimary,
+          })),
+          city: candidate.location?.city ?? null,
+          country: candidate.location?.country ?? null,
+          isVerified: candidate.profile.isVerified,
+          isBoosted: candidate.boosts.length > 0,
+          sharedInterests: sharedHobbies,
+          compatibilityScore: score,
+          profile: publicProfileDetails(candidate),
+        };
+
+        if (outsideDistance) {
+          distanceFallbackCards.push(card);
+          return [];
+        }
+
+        return [card];
       })
       .sort((a, b) => Number(b.isBoosted) - Number(a.isBoosted) || b.compatibilityScore - a.compatibilityScore)
       .slice(0, 20);
+
+    if (cards.length === 0 && distanceFallbackCards.length > 0) {
+      cards.push(
+        ...distanceFallbackCards
+          .sort((a, b) => Number(b.isBoosted) - Number(a.isBoosted) || b.compatibilityScore - a.compatibilityScore)
+          .slice(0, 20),
+      );
+    }
 
     const boostedUserIds = cards.filter((card) => card.isBoosted).map((card) => BigInt(card.id));
     if (boostedUserIds.length > 0) {
