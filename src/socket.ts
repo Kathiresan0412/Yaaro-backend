@@ -319,6 +319,15 @@ export function attachSocketServer(httpServer: HttpServer) {
       ack?.({ success: true, message: serializeMessage(updated, userId) });
     });
 
+    socket.on("webrtc_signal", (payload: { to: string; type: string; sdp?: any; candidate?: any }) => {
+      io.to(`user:${payload.to}`).emit("webrtc_signal", {
+        from: userKey,
+        type: payload.type,
+        sdp: payload.sdp,
+        candidate: payload.candidate,
+      });
+    });
+
     socket.on("disconnect", async () => {
       const count = Math.max((onlineUsers.get(userKey) ?? 1) - 1, 0);
 

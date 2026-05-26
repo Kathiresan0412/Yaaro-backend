@@ -131,7 +131,11 @@ messagesRouter.get("/messages/:matchId", async (req: AuthenticatedRequest, res, 
 messagesRouter.post("/messages/:matchId", async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = currentUserId(req);
-    const matchId = BigInt(req.params.matchId);
+    const matchIdStr = req.params.matchId;
+    if (!/^\d+$/.test(matchIdStr)) {
+      return res.status(400).json({ success: false, message: "Invalid match ID." });
+    }
+    const matchId = BigInt(matchIdStr);
     const type = parseMessageType(req.body.type || req.body.message_type || "text");
     const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
     const mediaInput =
