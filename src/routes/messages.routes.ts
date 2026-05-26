@@ -88,7 +88,11 @@ function scheduleUnreadMessageEmail(input: { userId: bigint; messageId: bigint; 
 messagesRouter.get("/messages/:matchId", async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = currentUserId(req);
-    const matchId = BigInt(req.params.matchId);
+    const matchIdStr = req.params.matchId;
+    if (!/^\d+$/.test(matchIdStr)) {
+      return res.status(400).json({ success: false, message: "Invalid match ID." });
+    }
+    const matchId = BigInt(matchIdStr);
     const limit = parseLimit(req.query.limit);
     const cursor = typeof req.query.cursor === "string" && req.query.cursor ? BigInt(req.query.cursor) : null;
     const conversation = await getConversationForMatch(userId, matchId);
