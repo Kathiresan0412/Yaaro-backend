@@ -225,7 +225,7 @@ async function sendAccountEmail(kind: "verify" | "reset", email: string, url: st
   });
 
   await transporter.sendMail({
-    from: env.mailFrom,
+    from: `"AuRo0" <${env.mailFrom}>`,
     to: email,
     subject,
     text: `${title}\n\nHi ${email},\n\n${intro}\n\nUse this link to ${action}: ${url}\n\n${closing}\n\nBest regards,\nYaaro0 Team`,
@@ -561,7 +561,7 @@ export async function resetPassword(req: Request, res: Response) {
 export async function oauthLogin(req: Request, res: Response) {
   const provider = cleanText(req.params.provider);
 
-  if (!["google", "facebook"].includes(provider)) {
+  if (!["google", "facebook", "tiktok"].includes(provider)) {
     return res.status(400).json({ success: false, message: "Unsupported OAuth provider." });
   }
 

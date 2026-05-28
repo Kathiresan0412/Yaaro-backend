@@ -733,24 +733,14 @@ export async function completeOnboarding(
   try {
     const currentUserId = userId(req);
 
-    // 1. Check and Seed Photos if < 2
-    let photosCount = await prisma.userPhoto.count({ where: { userId: currentUserId } });
-    if (photosCount < 2) {
-      const placeholders = [
-        "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=500&auto=format&fit=crop",
-        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=500&auto=format&fit=crop"
-      ];
-      for (let i = photosCount; i < 2; i++) {
-        await prisma.userPhoto.create({
-          data: {
-            userId: currentUserId,
-            url: placeholders[i],
-            orderIndex: i,
-            isPrimary: i === 0,
-          },
-        });
-      }
-    }
+    // Fetch user's first name to use as display name fallback
+    const userRecord = await prisma.user.findUnique({
+      where: { id: currentUserId },
+      select: { firstName: true },
+    });
+    const defaultDisplayName = userRecord?.firstName || "Yaaro Member";
+
+    // 1. Photos Seeding is skipped (no default photos stored in database)
 
     // 2. Check and Seed Profile if missing fields
     let profile = await prisma.userProfile.findUnique({ where: { userId: currentUserId } });
@@ -758,7 +748,7 @@ export async function completeOnboarding(
       profile = await prisma.userProfile.create({
         data: {
           userId: currentUserId,
-          displayName: "Yaaro0 Member",
+          displayName: defaultDisplayName,
           bio: "Looking to meet verified members, discover shared interests, and have genuine conversations. Let's connect!",
         },
       });
@@ -766,7 +756,7 @@ export async function completeOnboarding(
       let needsUpdate = false;
       const updateData: any = {};
       if (!profile.displayName?.trim()) {
-        updateData.displayName = "Yaaro0 Member";
+        updateData.displayName = defaultDisplayName;
         needsUpdate = true;
       }
       if (!profile.bio?.trim()) {

@@ -41,7 +41,7 @@ export async function notifyModerationTeam(report: {
   });
 
   await transporter.sendMail({
-    from: env.mailFrom,
+    from: `"AuRo0" <${env.mailFrom}>`,
     to: env.moderationAdminEmail,
     subject,
     text,

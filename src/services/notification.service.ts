@@ -235,7 +235,7 @@ export async function sendEmail(userId: bigint, templateId: string, data: Record
   const template = templateFor(templateId, { firstName: user.firstName, ...data });
   await sgMail.send({
     to: user.email,
-    from: env.sendgridFromEmail,
+    from: { name: "AuRo0", email: env.sendgridFromEmail },
     subject: template.subject,
     html: template.html,
   });
