@@ -305,18 +305,27 @@ function dailyVibeQuestion() {
   return VIBE_QUESTIONS[dayNumber % VIBE_QUESTIONS.length];
 }
 
-exploreRouter.get("/explore/categories", async (_req, res, next) => {
+exploreRouter.get("/explore/categories", async (req: AuthenticatedRequest, res, next) => {
   try {
-    const counts = await prisma.userHobby.groupBy({
-      by: ["hobby"],
-      _count: { hobby: true },
-    });
-    const countByHobby = new Map(counts.map((item) => [item.hobby.toLowerCase(), item._count.hobby]));
+    const userId = currentUserId(req);
+    const availableCards = await exploreCards(userId, () => true);
+    
+    if (!availableCards) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
 
-    const categories = CATEGORY_DEFINITIONS.map((category) => ({
-      ...category,
-      count: category.hobbies.reduce((sum, hobby) => sum + (countByHobby.get(hobby.toLowerCase()) || 0), 0),
-    }));
+    const categories = CATEGORY_DEFINITIONS.map((category) => {
+      const acceptedHobbies = category.hobbies.map((h) => h.toLowerCase());
+      const count = availableCards.filter((card) => {
+        const userHobbies = card.profile?.interests?.hobbies ?? [];
+        return userHobbies.some((hobby) => acceptedHobbies.includes(hobby.toLowerCase()));
+      }).length;
+
+      return {
+        ...category,
+        count,
+      };
+    });
 
     res.json({ success: true, categories });
   } catch (error) {

@@ -32,4 +32,6 @@ export const env = {
   vapidSubject: process.env.VAPID_SUBJECT ?? process.env.PUBLIC_WEB_URL ?? "mailto:admin@yaro0.com",
   spotifyClientId: process.env.SPOTIFY_CLIENT_ID ?? "",
   spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET ?? "",
+  tiktokClientKey: process.env.TIKTOK_CLIENT_KEY ?? "",
+  tiktokClientSecret: process.env.TIKTOK_CLIENT_SECRET ?? "",
 };

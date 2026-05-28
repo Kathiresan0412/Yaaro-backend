@@ -44,6 +44,11 @@ app.get("/status", (_req, res) => {
   });
 });
 
+app.get("/tiktok-developers-site-verification.txt", (_req, res) => {
+  res.type("text/plain").send("tiktok-developers-site-verification=RVosRKuewMbKrbuERGPqTojVH3kVnlWv");
+});
+
+
 app.use("/api", apiRouter);
 app.use("/api/v1", apiRouter);
 app.use("/admin/api", adminRouter);
