@@ -7,35 +7,6 @@ export const exploreRouter = Router();
 
 exploreRouter.use(requireAuth);
 
-const CATEGORY_DEFINITIONS = [
-  { key: "fitness", label: "Fitness", emoji: "🏋️", hobbies: ["Fitness", "Gym", "Yoga", "Running", "Cycling"] },
-  { key: "foodies", label: "Foodies", emoji: "🍕", hobbies: ["Cooking", "Food", "Baking", "Restaurants"] },
-  { key: "travel", label: "Travel", emoji: "✈️", hobbies: ["Travel", "Backpacking", "Road trips", "Beaches"] },
-  { key: "gamers", label: "Gamers", emoji: "🎮", hobbies: ["Gaming", "Esports", "Board games"] },
-  { key: "music", label: "Music", emoji: "🎵", hobbies: ["Music", "Concerts", "Singing", "Dancing"] },
-  { key: "outdoors", label: "Outdoors", emoji: "🌲", hobbies: ["Hiking", "Camping", "Nature", "Adventure"] },
-  { key: "creatives", label: "Creatives", emoji: "🎨", hobbies: ["Art", "Photography", "Writing", "Design"] },
-  { key: "bookworms", label: "Bookworms", emoji: "📚", hobbies: ["Reading", "Books", "Poetry"] },
-];
-
-const VIBE_QUESTIONS = [
-  {
-    id: "daily-2026-05-18",
-    prompt: "A perfect weekend starts with...",
-    answers: ["A spontaneous trip", "A slow morning"],
-  },
-  {
-    id: "daily-2026-05-19",
-    prompt: "Choose your date energy.",
-    answers: ["Street food crawl", "Quiet rooftop talk"],
-  },
-  {
-    id: "daily-2026-05-20",
-    prompt: "Would you rather...",
-    answers: ["Travel often", "Build a cozy home"],
-  },
-];
-
 type Candidate = {
   id: bigint;
   firstName: string | null;
@@ -57,6 +28,20 @@ type Candidate = {
   profile: { gender: string; dateOfBirth: Date; isVerified: boolean } | null;
   discoveryPreference: { incognitoMode: boolean } | null;
   boosts: { id: bigint; endsAt: Date }[];
+};
+
+type ExploreCategoryPayload = {
+  key: string;
+  label: string;
+  emoji: string;
+  hobbies: string[];
+  count?: number;
+};
+
+type VibeQuestionPayload = {
+  id: string;
+  prompt: string;
+  answers: string[];
 };
 
 function currentUserId(req: AuthenticatedRequest) {
@@ -83,6 +68,35 @@ function jsonArray(value: unknown) {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     : [];
+}
+
+async function exploreCategories() {
+  const categories = await prisma.exploreCategory.findMany({
+    where: { isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
+  });
+
+  return categories.map<ExploreCategoryPayload>((category) => ({
+    key: category.key,
+    label: category.label,
+    emoji: category.emoji,
+    hobbies: jsonArray(category.hobbies),
+  }));
+}
+
+async function exploreVibeQuestions() {
+  const questions = await prisma.exploreVibeQuestion.findMany({
+    where: { isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { key: "asc" }],
+  });
+
+  return questions
+    .map<VibeQuestionPayload>((question) => ({
+      id: question.key,
+      prompt: question.prompt,
+      answers: jsonArray(question.answers),
+    }))
+    .filter((question) => question.answers.length > 0);
 }
 
 function decimalToNumber(value: unknown) {
@@ -300,9 +314,14 @@ async function exploreCards(
     .slice(0, limit);
 }
 
-function dailyVibeQuestion() {
+async function dailyVibeQuestion() {
+  const questions = await exploreVibeQuestions();
+  if (questions.length === 0) {
+    return null;
+  }
+
   const dayNumber = Math.floor(Date.now() / 86_400_000);
-  return VIBE_QUESTIONS[dayNumber % VIBE_QUESTIONS.length];
+  return questions[dayNumber % questions.length];
 }
 
 exploreRouter.get("/explore/categories", async (req: AuthenticatedRequest, res, next) => {
@@ -314,7 +333,8 @@ exploreRouter.get("/explore/categories", async (req: AuthenticatedRequest, res, 
       return res.status(404).json({ success: false, message: "User not found." });
     }
 
-    const categories = CATEGORY_DEFINITIONS.map((category) => {
+    const categoryDefinitions = await exploreCategories();
+    const categories = categoryDefinitions.map((category) => {
       const acceptedHobbies = category.hobbies.map((h) => h.toLowerCase());
       const count = availableCards.filter((card) => {
         const userHobbies = card.profile?.interests?.hobbies ?? [];
@@ -336,7 +356,8 @@ exploreRouter.get("/explore/categories", async (req: AuthenticatedRequest, res, 
 exploreRouter.get("/explore/by-interest/:hobby", async (req: AuthenticatedRequest, res, next) => {
   try {
     const hobby = decodeURIComponent(req.params.hobby).toLowerCase();
-    const category = CATEGORY_DEFINITIONS.find(
+    const categoryDefinitions = await exploreCategories();
+    const category = categoryDefinitions.find(
       (item) => item.key === hobby || item.label.toLowerCase() === hobby,
     );
     const acceptedHobbies = (category?.hobbies || [decodeURIComponent(req.params.hobby)]).map((item) =>
@@ -393,7 +414,11 @@ exploreRouter.get("/explore/nearby", async (req: AuthenticatedRequest, res, next
 exploreRouter.get("/explore/vibes/today", async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = currentUserId(req);
-    const question = dailyVibeQuestion();
+    const question = await dailyVibeQuestion();
+    if (!question) {
+      return res.json({ success: true, question: null, answer: null });
+    }
+
     const existing = await prisma.$queryRaw<Array<{ answer: string }>>`
       SELECT answer FROM vibe_responses WHERE user_id = ${userId} AND question_id = ${question.id} LIMIT 1
     `;
@@ -407,7 +432,11 @@ exploreRouter.get("/explore/vibes/today", async (req: AuthenticatedRequest, res,
 exploreRouter.post("/explore/vibes/respond", async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = currentUserId(req);
-    const question = dailyVibeQuestion();
+    const question = await dailyVibeQuestion();
+    if (!question) {
+      return res.status(404).json({ success: false, message: "Today's vibe question is unavailable." });
+    }
+
     const answer = String(req.body.answer || "");
 
     if (!question.answers.includes(answer)) {

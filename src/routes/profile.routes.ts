@@ -5,6 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middl
 import { isSupportedImageUploadSource, uploadProfilePhoto } from "../services/media.service";
 import { assertSafeText } from "../services/content-safety.service";
 import { requireTier } from "../services/premium.service";
+import { interestBadges } from "../services/interest-badges.service";
 
 export const profileRouter = Router();
 
@@ -149,30 +150,6 @@ function serializeProfile(profile: UserProfile | null) {
     createdAt: createdAt.toISOString(),
     updatedAt: updatedAt.toISOString(),
   };
-}
-
-const BADGE_KEYWORDS: Array<{ badge: string; keywords: string[] }> = [
-  { badge: "Gamer", keywords: ["game", "gaming", "esports", "playstation", "xbox"] },
-  { badge: "Traveller", keywords: ["travel", "trip", "backpacking", "passport"] },
-  { badge: "Foodie", keywords: ["food", "cooking", "baking", "restaurant"] },
-  { badge: "Music Lover", keywords: ["music", "singing", "guitar", "piano", "concert"] },
-  { badge: "Bookworm", keywords: ["book", "reading", "novel", "poetry"] },
-  { badge: "Fitness", keywords: ["gym", "fitness", "running", "yoga", "workout"] },
-  { badge: "Creative", keywords: ["art", "design", "painting", "photography", "writing"] },
-  { badge: "Movie Buff", keywords: ["movie", "cinema", "film", "netflix"] },
-  { badge: "Nature", keywords: ["hiking", "nature", "camping", "beach", "garden"] },
-];
-
-function interestBadges(hobbies: string[]) {
-  const badges = new Set<string>();
-
-  for (const hobby of hobbies) {
-    const normalized = hobby.toLowerCase();
-    const matched = BADGE_KEYWORDS.find((item) => item.keywords.some((keyword) => normalized.includes(keyword)));
-    badges.add(matched?.badge ?? hobby);
-  }
-
-  return Array.from(badges).slice(0, 12);
 }
 
 function jsonArray(value: unknown) {
@@ -337,7 +314,7 @@ async function getProfilePayload(currentUserId: bigint) {
       showPhotosOnly: preferences.showPhotosOnly,
       incognitoMode: preferences.incognitoMode,
     },
-    badges: interestBadges(hobbies.map((item) => item.hobby)),
+    badges: await interestBadges(hobbies.map((item) => item.hobby)),
     completeness: profileCompleteness({
       profile,
       hobbies: hobbies.map((item) => item.hobby),
@@ -373,7 +350,7 @@ profileRouter.get("/completeness", async (req: AuthenticatedRequest, res, next) 
         photoCount,
         hasLocation: Boolean(location),
       }),
-      badges: interestBadges(hobbies.map((item) => item.hobby)),
+      badges: await interestBadges(hobbies.map((item) => item.hobby)),
     });
   } catch (error) {
     next(error);

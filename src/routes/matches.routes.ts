@@ -3,6 +3,7 @@ import type { Prisma, UserProfile } from "@prisma/client";
 import { prisma } from "../config/database";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { hasTier, getUserTier } from "../services/premium.service";
+import { interestBadges } from "../services/interest-badges.service";
 
 export const matchesRouter = Router();
 
@@ -35,30 +36,6 @@ function jsonArray(value: unknown) {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     : [];
-}
-
-const BADGE_KEYWORDS: Array<{ badge: string; keywords: string[] }> = [
-  { badge: "Gamer", keywords: ["game", "gaming", "esports", "playstation", "xbox"] },
-  { badge: "Traveller", keywords: ["travel", "trip", "backpacking", "passport"] },
-  { badge: "Foodie", keywords: ["food", "cooking", "baking", "restaurant"] },
-  { badge: "Music Lover", keywords: ["music", "singing", "guitar", "piano", "concert"] },
-  { badge: "Bookworm", keywords: ["book", "reading", "novel", "poetry"] },
-  { badge: "Fitness", keywords: ["gym", "fitness", "running", "yoga", "workout"] },
-  { badge: "Creative", keywords: ["art", "design", "painting", "photography", "writing"] },
-  { badge: "Movie Buff", keywords: ["movie", "cinema", "film", "netflix"] },
-  { badge: "Nature", keywords: ["hiking", "nature", "camping", "beach", "garden"] },
-];
-
-function interestBadges(hobbies: string[]) {
-  const badges = new Set<string>();
-
-  for (const hobby of hobbies) {
-    const normalized = hobby.toLowerCase();
-    const matched = BADGE_KEYWORDS.find((item) => item.keywords.some((keyword) => normalized.includes(keyword)));
-    badges.add(matched?.badge ?? hobby);
-  }
-
-  return Array.from(badges).slice(0, 12);
 }
 
 function decimalToNumber(value: unknown) {
@@ -101,7 +78,7 @@ function displayName(user: {
   );
 }
 
-function publicProfile(user: {
+async function publicProfile(user: {
   id: bigint;
   firstName: string | null;
   lastName: string | null;
@@ -164,7 +141,7 @@ function publicProfile(user: {
     },
     interests: {
       hobbies: user.hobbies.map((item) => item.hobby),
-      badges: interestBadges(user.hobbies.map((item) => item.hobby)),
+      badges: await interestBadges(user.hobbies.map((item) => item.hobby)),
       favPet: profile?.favPet ?? null,
       favColour: profile?.favColour ?? null,
       favFood: jsonArray(profile?.favFood),
@@ -378,7 +355,7 @@ matchesRouter.get("/users/:userId/profile", async (req: AuthenticatedRequest, re
       return res.status(404).json({ success: false, message: "Profile is not available." });
     }
 
-    const targetProfile = publicProfile(target);
+    const targetProfile = await publicProfile(target);
     if (viewerId !== targetUserId) {
       await prisma.profileView.create({
         data: { viewerId, viewedId: targetUserId, source: "profile" },
