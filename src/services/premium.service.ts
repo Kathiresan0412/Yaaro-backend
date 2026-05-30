@@ -48,7 +48,7 @@ export function capabilitiesForTier(tier: PremiumTier): PremiumCapabilities {
     canRewind: paid,
     canPassport: paid,
     canIncognito: paid,
-    canSeeLikes: goldPlus,
+    canSeeLikes: paid,
     canUseTopPicks: goldPlus,
     priorityLikes: platinum,
     canMessageBeforeMatch: platinum,

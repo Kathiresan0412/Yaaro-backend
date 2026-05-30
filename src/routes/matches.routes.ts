@@ -406,7 +406,7 @@ matchesRouter.get("/users/:userId/profile", async (req: AuthenticatedRequest, re
 matchesRouter.get("/likes/received", async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = currentUserId(req);
-    const canSeeLikes = await hasPlan(userId, ["gold", "platinum"]);
+    const canSeeLikes = await hasPlan(userId, ["plus", "gold", "platinum"]);
 
     const unmatchedLikeWhere: Prisma.SwipeWhereInput = {
       swipedId: userId,
