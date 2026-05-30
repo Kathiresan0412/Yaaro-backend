@@ -26,7 +26,7 @@ export const prisma =
     adapter: new PrismaPg({
       connectionString: databaseUrlForPg(),
       ssl: requiresSsl ? { rejectUnauthorized: false } : undefined,
-      max: env.databasePoolMax,
+      max: Math.max(1, env.databasePoolMax),
       idleTimeoutMillis: 10_000,
       connectionTimeoutMillis: 5_000,
     }),
