@@ -67,6 +67,30 @@ function notificationBodyForMessage(type: MessageType, content: string) {
   return content.slice(0, 120);
 }
 
+function calculateAge(dateOfBirth: Date) {
+  const today = new Date();
+  let age = today.getFullYear() - dateOfBirth.getFullYear();
+  const monthDifference = today.getMonth() - dateOfBirth.getMonth();
+
+  if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < dateOfBirth.getDate())) {
+    age -= 1;
+  }
+
+  return age;
+}
+
+function displayName(user: {
+  firstName: string | null;
+  lastName: string | null;
+  onboardingProfile?: { displayName: string | null } | null;
+}) {
+  return (
+    user.onboardingProfile?.displayName ||
+    [user.firstName, user.lastName].filter(Boolean).join(" ") ||
+    "Yaaro member"
+  );
+}
+
 function scheduleUnreadMessageEmail(input: { userId: bigint; messageId: bigint; matchId: bigint; senderId: bigint }) {
   setTimeout(async () => {
     const message = await prisma.message.findFirst({
@@ -84,6 +108,83 @@ function scheduleUnreadMessageEmail(input: { userId: bigint; messageId: bigint; 
     });
   }, 5 * 60 * 1000).unref();
 }
+
+messagesRouter.get("/conversations", async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = currentUserId(req);
+    const conversations = await prisma.conversation.findMany({
+      where: {
+        isActive: true,
+        OR: [{ user1Id: userId }, { user2Id: userId }],
+      },
+      orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
+      include: {
+        match: { select: { id: true, matchedAt: true, compatibilityScore: true, isActive: true } },
+        user1: {
+          include: {
+            onboardingProfile: true,
+            onboardingPhotos: { orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }] },
+            profile: true,
+          },
+        },
+        user2: {
+          include: {
+            onboardingProfile: true,
+            onboardingPhotos: { orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }] },
+            profile: true,
+          },
+        },
+      },
+    });
+    const blocks = await prisma.block.findMany({
+      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    const blockedIds = new Set(
+      blocks.map((block) =>
+        block.blockerId === userId ? block.blockedId.toString() : block.blockerId.toString(),
+      ),
+    );
+
+    const items = conversations.flatMap((conversation) => {
+      const otherUser = conversation.user1Id === userId ? conversation.user2 : conversation.user1;
+      if (blockedIds.has(otherUser.id.toString())) {
+        return [];
+      }
+
+      return [
+        {
+          id: conversation.matchId.toString(),
+          conversationId: conversation.id.toString(),
+          matchedAt: conversation.match.matchedAt.toISOString(),
+          isNew: false,
+          isActiveMatch: conversation.match.isActive,
+          compatibilityScore: Number(conversation.match.compatibilityScore),
+          user: {
+            id: otherUser.id.toString(),
+            displayName: displayName(otherUser),
+            age: otherUser.profile ? calculateAge(otherUser.profile.dateOfBirth) : null,
+            mainPhotoUrl: otherUser.onboardingPhotos[0]?.url ?? null,
+            lastActiveAt: otherUser.lastActiveAt?.toISOString() ?? null,
+            isVerified: otherUser.profile?.isVerified ?? false,
+          },
+          lastMessage: conversation.lastMessagePreview
+            ? {
+                preview: conversation.lastMessagePreview,
+                sentAt: conversation.lastMessageAt?.toISOString() ?? null,
+              }
+            : null,
+          unreadCount:
+            conversation.user1Id === userId ? conversation.user1UnreadCount : conversation.user2UnreadCount,
+        },
+      ];
+    });
+
+    res.json({ success: true, conversations: items });
+  } catch (error) {
+    next(error);
+  }
+});
 
 messagesRouter.get("/messages/:matchId", async (req: AuthenticatedRequest, res, next) => {
   try {

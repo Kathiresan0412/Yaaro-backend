@@ -201,14 +201,27 @@ export function attachSocketServer(httpServer: HttpServer) {
           return;
         }
 
-        const created = await createMessage({
-          userId,
-          matchId,
-          type,
-          content,
-          mediaUrl,
-          durationSeconds: Number.isFinite(payload?.durationSeconds) ? payload.durationSeconds ?? null : null,
-        });
+        let created: Awaited<ReturnType<typeof createMessage>>;
+        try {
+          created = await createMessage({
+            userId,
+            matchId,
+            type,
+            content,
+            mediaUrl,
+            durationSeconds: Number.isFinite(payload?.durationSeconds) ? payload.durationSeconds ?? null : null,
+          });
+        } catch (error) {
+          const status = typeof error === "object" && error && "status" in error
+            ? Number((error as { status?: number }).status)
+            : 500;
+          ack?.({
+            success: false,
+            status,
+            message: error instanceof Error ? error.message : "Message could not be sent.",
+          });
+          return;
+        }
 
         if (!created) {
           ack?.({ success: false, message: "Match not found." });

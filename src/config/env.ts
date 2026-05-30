@@ -20,6 +20,7 @@ export const env = {
   smtpPassword: process.env.SMTP_PASSWORD ?? "",
   mailFrom: process.env.MAIL_FROM ?? process.env.SMTP_USER ?? "",
   moderationAdminEmail: process.env.MODERATION_ADMIN_EMAIL ?? process.env.MAIL_FROM ?? process.env.SMTP_USER ?? "",
+  stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
   stripePricePlus: process.env.STRIPE_PRICE_PLUS ?? "",

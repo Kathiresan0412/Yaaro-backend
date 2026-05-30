@@ -20,6 +20,7 @@ export const premiumRouter = Router();
 const PAID_TIERS = ["plus", "gold", "platinum"] as const;
 
 type PaidTier = (typeof PAID_TIERS)[number];
+type CheckoutPlan = Awaited<ReturnType<typeof ensureSubscriptionPlan>>;
 
 function currentUserId(req: AuthenticatedRequest) {
   if (!req.auth?.userId) {
@@ -49,10 +50,19 @@ function checkoutCancelUrl() {
   return `${env.publicWebUrl.replace(/\/$/, "")}/app/premium?checkout=cancelled`;
 }
 
-async function createStripeCheckoutSession(userId: bigint, tier: PaidTier) {
+function stripeUnitAmount(plan: CheckoutPlan) {
+  const amount = Number(plan.priceUsd ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Subscription plan price is not configured.");
+  }
+
+  return Math.round(amount * 100);
+}
+
+async function createStripeCheckoutSession(userId: bigint, tier: PaidTier, plan: CheckoutPlan) {
   const price = stripePriceForTier(tier);
 
-  if (!env.stripeSecretKey || !price) {
+  if (!env.stripeSecretKey) {
     return null;
   }
 
@@ -61,7 +71,14 @@ async function createStripeCheckoutSession(userId: bigint, tier: PaidTier) {
   params.set("success_url", checkoutSuccessUrl());
   params.set("cancel_url", checkoutCancelUrl());
   params.set("client_reference_id", userId.toString());
-  params.set("line_items[0][price]", price);
+  if (price) {
+    params.set("line_items[0][price]", price);
+  } else {
+    params.set("line_items[0][price_data][currency]", "usd");
+    params.set("line_items[0][price_data][unit_amount]", stripeUnitAmount(plan).toString());
+    params.set("line_items[0][price_data][recurring][interval]", "month");
+    params.set("line_items[0][price_data][product_data][name]", `Yaaro0 ${plan.name}`);
+  }
   params.set("line_items[0][quantity]", "1");
   params.set("metadata[userId]", userId.toString());
   params.set("metadata[tier]", tier);
@@ -267,7 +284,7 @@ premiumRouter.post("/payments/create-checkout", requireAuth, async (req: Authent
     }
 
     const plan = await ensureSubscriptionPlan(tier);
-    const session = await createStripeCheckoutSession(userId, tier);
+    const session = await createStripeCheckoutSession(userId, tier, plan);
 
     if (!session) {
       return res.status(503).json({

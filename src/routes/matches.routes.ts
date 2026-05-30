@@ -273,8 +273,15 @@ matchesRouter.get("/matches", async (req: AuthenticatedRequest, res, next) => {
             : conversation?.user2UnreadCount ?? 0,
       };
     });
+    const itemsByUser = new Map<string, (typeof items)[number]>();
 
-    res.json({ success: true, matches: items });
+    for (const item of items) {
+      if (!itemsByUser.has(item.user.id)) {
+        itemsByUser.set(item.user.id, item);
+      }
+    }
+
+    res.json({ success: true, matches: Array.from(itemsByUser.values()) });
   } catch (error) {
     next(error);
   }

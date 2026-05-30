@@ -1,5 +1,6 @@
 import type { Message, MessageType } from "@prisma/client";
 import { prisma } from "../config/database";
+import { getUserTier } from "./premium.service";
 
 export type SerializedMessage = {
   id: string;
@@ -24,6 +25,48 @@ type ConversationAccess = {
   user1Id: bigint;
   user2Id: bigint;
 };
+
+const freeDailyMessageLimit = 2;
+
+function dateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+async function consumeMessageAllowance(userId: bigint) {
+  if ((await getUserTier(userId)) !== "free") {
+    return;
+  }
+
+  const today = new Date();
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { freeMessagesUsedToday: true, freeMessagesResetAt: true },
+  });
+
+  if (!user) {
+    const error = new Error("User not found.");
+    (error as Error & { status?: number }).status = 404;
+    throw error;
+  }
+
+  if (!user.freeMessagesResetAt || dateKey(user.freeMessagesResetAt) !== dateKey(today)) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { freeMessagesUsedToday: 0, freeMessagesResetAt: today },
+    });
+  }
+
+  const updated = await prisma.user.updateMany({
+    where: { id: userId, freeMessagesUsedToday: { lt: freeDailyMessageLimit } },
+    data: { freeMessagesUsedToday: { increment: 1 }, freeMessagesResetAt: today },
+  });
+
+  if (updated.count === 0) {
+    const error = new Error("Free members can send 2 messages per day. Upgrade to keep chatting.");
+    (error as Error & { status?: number }).status = 402;
+    throw error;
+  }
+}
 
 function normalizeReactions(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -64,6 +107,30 @@ export function serializeMessage(
 }
 
 export async function getConversationForMatch(userId: bigint, matchId: bigint) {
+  const existing = await prisma.conversation.findFirst({
+    where: {
+      matchId,
+      isActive: true,
+      OR: [{ user1Id: userId }, { user2Id: userId }],
+    },
+    select: { id: true, matchId: true, user1Id: true, user2Id: true },
+  });
+
+  if (existing) {
+    const otherUserId = existing.user1Id === userId ? existing.user2Id : existing.user1Id;
+    const blocked = await prisma.block.findFirst({
+      where: {
+        OR: [
+          { blockerId: userId, blockedId: otherUserId },
+          { blockerId: otherUserId, blockedId: userId },
+        ],
+      },
+      select: { id: true },
+    });
+
+    return blocked ? null : existing;
+  }
+
   const match = await prisma.match.findFirst({
     where: {
       id: matchId,
@@ -89,15 +156,6 @@ export async function getConversationForMatch(userId: bigint, matchId: bigint) {
 
   if (blocked) {
     return null;
-  }
-
-  const existing = await prisma.conversation.findFirst({
-    where: { matchId: match.id, isActive: true },
-    select: { id: true, matchId: true, user1Id: true, user2Id: true },
-  });
-
-  if (existing) {
-    return existing;
   }
 
   return prisma.conversation.create({
@@ -139,6 +197,8 @@ export async function createMessage(params: {
   if (!conversation) {
     return null;
   }
+
+  await consumeMessageAllowance(params.userId);
 
   const now = new Date();
   const isSenderUser1 = conversation.user1Id === params.userId;
