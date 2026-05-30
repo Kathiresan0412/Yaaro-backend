@@ -25,8 +25,7 @@ async function main() {
         isActive: true,
         isBanned: false,
         onboardingCompleted: true,
-        phoneVerifiedAt: new Date(),
-        emailVerifiedAt: new Date(),
+        emailVerified: true,
         passwordHash,
         passwordUpdatedAt: new Date(),
         profile: {

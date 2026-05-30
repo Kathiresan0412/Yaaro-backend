@@ -621,6 +621,44 @@ profileRouter.put("/photos/reorder", async (req: AuthenticatedRequest, res, next
   }
 });
 
+profileRouter.put("/photos/:id/primary", async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const currentUserId = userId(req);
+    const id = BigInt(req.params.id);
+
+    // Fetch all current photos of this user
+    const photos = await prisma.userPhoto.findMany({
+      where: { userId: currentUserId },
+      orderBy: [{ orderIndex: "asc" }, { id: "asc" }],
+    });
+
+    const targetPhoto = photos.find((photo) => photo.id === id);
+    if (!targetPhoto) {
+      return res.status(404).json({ success: false, message: "Photo not found." });
+    }
+
+    // Reorder so target photo is at index 0 (primary), shifting others
+    const remainingPhotos = photos.filter((photo) => photo.id !== id);
+    const newOrder = [targetPhoto, ...remainingPhotos];
+
+    await prisma.$transaction(
+      newOrder.map((photo, index) =>
+        prisma.userPhoto.update({
+          where: { id: photo.id },
+          data: {
+            orderIndex: index,
+            isPrimary: index === 0,
+          },
+        }),
+      ),
+    );
+
+    res.json({ success: true, ...(await getProfilePayload(currentUserId)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 profileRouter.put("/preferences", async (req: AuthenticatedRequest, res, next) => {
   try {
     const currentUserId = userId(req);
