@@ -250,6 +250,8 @@ async function getProfilePayload(currentUserId: bigint) {
         firstName: true,
         lastName: true,
         onboardingCompleted: true,
+        oauthProvider: true,
+        oauthId: true,
         profile: {
           select: {
             nameEn: true,
@@ -280,6 +282,8 @@ async function getProfilePayload(currentUserId: bigint) {
       firstName: user.firstName,
       lastName: user.lastName,
       onboardingCompleted: user.onboardingCompleted,
+      oauthProvider: user.oauthProvider,
+      oauthId: user.oauthId,
       registeredProfile: user.profile && {
         name: user.profile.nameEn,
         gender: user.profile.gender,
