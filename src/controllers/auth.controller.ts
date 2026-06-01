@@ -569,6 +569,44 @@ export async function oauthLogin(req: Request, res: Response) {
   const oauthId = cleanText(req.body.oauthId);
   const firstName = cleanText(req.body.firstName) || "Yaaro0";
   const lastName = cleanText(req.body.lastName) || "Member";
+  const linkUserId = cleanText(req.body.userId);
+
+  if (linkUserId) {
+    try {
+      const userIdBigInt = BigInt(linkUserId);
+      const user = await prisma.user.update({
+        where: { id: userIdBigInt },
+        data: {
+          oauthProvider: provider,
+          oauthId,
+        },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          emailVerified: true,
+          onboardingCompleted: true,
+          role: true,
+        },
+      });
+
+      const session = await createSession(user);
+      setAuthCookies(res, session.accessToken, session.refreshToken);
+
+      return res.json({
+        success: true,
+        message: "OAuth link successful.",
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
+        user: publicUser(user),
+        redirectTo: user.onboardingCompleted ? "/app/discover" : "/onboarding",
+      });
+    } catch (err) {
+      console.error("Failed to link OAuth provider:", err);
+      return res.status(500).json({ success: false, message: "Unable to link account." });
+    }
+  }
 
   if (!email || !isEmail(email) || !oauthId) {
     return res.status(400).json({
