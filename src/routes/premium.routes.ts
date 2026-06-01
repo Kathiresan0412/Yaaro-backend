@@ -5,6 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middl
 import {
   addDays,
   addMinutes,
+  capabilitiesForTier,
   ensureSubscriptionPlan,
   getUserCapabilities,
   getUserTier,
@@ -230,8 +231,7 @@ function scheduleBoostEndedNotification(boost: { id: bigint; userId: bigint; end
 premiumRouter.get("/payments/subscription", requireAuth, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = currentUserId(req);
-    const [tier, subscription, boostsUsedThisMonth, activeBoost, location, preferences] = await Promise.all([
-      getUserTier(userId),
+    const [subscription, boostsUsedThisMonth, activeBoost, location, preferences] = await Promise.all([
       prisma.subscription.findFirst({
         where: { userId, status: "active", startsAt: { lte: new Date() }, endsAt: { gte: new Date() } },
         orderBy: { endsAt: "desc" },
@@ -243,9 +243,14 @@ premiumRouter.get("/payments/subscription", requireAuth, async (req: Authenticat
         orderBy: { endsAt: "desc" },
       }),
       prisma.userLocation.findUnique({ where: { userId } }),
-      prisma.userPreference.upsert({ where: { userId }, update: {}, create: { userId } }),
+      prisma.userPreference.findUnique({ where: { userId } }),
     ]);
-    const capabilities = await getUserCapabilities(userId);
+    const tier = (subscription?.plan.slug === "plus" ||
+      subscription?.plan.slug === "gold" ||
+      subscription?.plan.slug === "platinum")
+      ? subscription.plan.slug
+      : "free";
+    const capabilities = capabilitiesForTier(tier);
 
     res.json({
       success: true,
@@ -267,7 +272,7 @@ premiumRouter.get("/payments/subscription", requireAuth, async (req: Authenticat
       },
       boostsRemaining: Math.max(0, capabilities.monthlyBoosts - boostsUsedThisMonth),
       location: activeLocation(location),
-      preferences: { incognitoMode: preferences.incognitoMode },
+      preferences: { incognitoMode: preferences?.incognitoMode ?? false },
     });
   } catch (error) {
     next(error);
