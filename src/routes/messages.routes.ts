@@ -93,19 +93,23 @@ function displayName(user: {
 
 function scheduleUnreadMessageEmail(input: { userId: bigint; messageId: bigint; matchId: bigint; senderId: bigint }) {
   setTimeout(async () => {
-    const message = await prisma.message.findFirst({
-      where: { id: input.messageId, isRead: false },
-      select: { id: true },
-    });
+    try {
+      const message = await prisma.message.findFirst({
+        where: { id: input.messageId, isRead: false },
+        select: { id: true },
+      });
 
-    if (!message) {
-      return;
+      if (!message) {
+        return;
+      }
+
+      await sendEmail(input.userId, "new_message", {
+        matchId: input.matchId.toString(),
+        senderId: input.senderId.toString(),
+      });
+    } catch (error) {
+      console.error("Error sending scheduled unread message email:", error);
     }
-
-    await sendEmail(input.userId, "new_message", {
-      matchId: input.matchId.toString(),
-      senderId: input.senderId.toString(),
-    });
   }, 5 * 60 * 1000).unref();
 }
 

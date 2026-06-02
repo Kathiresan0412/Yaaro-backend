@@ -9,6 +9,7 @@ type NotificationEmitter = (userId: bigint, payload: SerializedNotification) => 
 let emitter: NotificationEmitter | null = null;
 let sendGridConfigured = false;
 let webPushConfigured = false;
+let webPushConfigFailed = false;
 
 export type NotificationType =
   | "new_match"
@@ -63,9 +64,18 @@ function configureSendGrid() {
 }
 
 function configureWebPush() {
-  if (!webPushConfigured && env.vapidPublicKey && env.vapidPrivateKey) {
-    webpush.setVapidDetails(env.vapidSubject, env.vapidPublicKey, env.vapidPrivateKey);
-    webPushConfigured = true;
+  if (webPushConfigured || webPushConfigFailed) {
+    return;
+  }
+
+  if (env.vapidPublicKey && env.vapidPrivateKey) {
+    try {
+      webpush.setVapidDetails(env.vapidSubject, env.vapidPublicKey, env.vapidPrivateKey);
+      webPushConfigured = true;
+    } catch (error) {
+      console.error("Failed to configure WebPush VAPID details:", error);
+      webPushConfigFailed = true;
+    }
   }
 }
 
@@ -233,14 +243,18 @@ export async function sendEmail(userId: bigint, templateId: string, data: Record
   }
 
   const template = templateFor(templateId, { firstName: user.firstName, ...data });
-  await sgMail.send({
-    to: user.email,
-    from: { name: "AuRo0", email: env.sendgridFromEmail },
-    subject: template.subject,
-    html: template.html,
-  });
-
-  return { sent: true, skipped: false };
+  try {
+    await sgMail.send({
+      to: user.email,
+      from: { name: "AuRo0", email: env.sendgridFromEmail },
+      subject: template.subject,
+      html: template.html,
+    });
+    return { sent: true, skipped: false };
+  } catch (error) {
+    console.error("SendGrid email delivery failed:", error);
+    return { sent: false, skipped: false };
+  }
 }
 
 export async function notifyUser(input: {

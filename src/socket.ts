@@ -81,20 +81,40 @@ function emitMessageToUser(
 
 function scheduleUnreadMessageEmail(input: { userId: bigint; messageId: bigint; matchId: bigint; senderId: bigint }) {
   setTimeout(async () => {
-    const message = await prisma.message.findFirst({
-      where: { id: input.messageId, isRead: false },
-      select: { id: true },
-    });
+    try {
+      const message = await prisma.message.findFirst({
+        where: { id: input.messageId, isRead: false },
+        select: { id: true },
+      });
 
-    if (!message) {
-      return;
+      if (!message) {
+        return;
+      }
+
+      await sendEmail(input.userId, "new_message", {
+        matchId: input.matchId.toString(),
+        senderId: input.senderId.toString(),
+      });
+    } catch (error) {
+      console.error("Error sending scheduled unread message email (socket):", error);
     }
-
-    await sendEmail(input.userId, "new_message", {
-      matchId: input.matchId.toString(),
-      senderId: input.senderId.toString(),
-    });
   }, 5 * 60 * 1000).unref();
+}
+
+function safeAsyncHandler(handler: (...args: any[]) => Promise<void>) {
+  return async (...args: any[]) => {
+    try {
+      await handler(...args);
+    } catch (error) {
+      console.error("Socket handler error:", error);
+      const ack = args[args.length - 1];
+      if (typeof ack === "function") {
+        try {
+          ack({ success: false, message: "Internal server error." });
+        } catch {}
+      }
+    }
+  };
 }
 
 export function attachSocketServer(httpServer: HttpServer) {
@@ -144,7 +164,7 @@ export function attachSocketServer(httpServer: HttpServer) {
     await prisma.user.update({ where: { id: userId }, data: { lastActiveAt: new Date() } }).catch(() => undefined);
     io.emit("presence_update", { userId: userKey, isOnline: true });
 
-    socket.on("join_match", async (payload: { matchId?: string }, ack?: Ack) => {
+    socket.on("join_match", safeAsyncHandler(async (payload: { matchId?: string }, ack?: Ack) => {
       const matchId = parseBigInt(payload?.matchId);
 
       if (!matchId) {
@@ -168,7 +188,7 @@ export function attachSocketServer(httpServer: HttpServer) {
         otherUserId: otherUserId.toString(),
         isOnline: onlineUsers.has(otherUserId.toString()),
       });
-    });
+    }));
 
     socket.on("leave_match", (payload: { matchId?: string }) => {
       const matchId = parseBigInt(payload?.matchId);
@@ -181,7 +201,7 @@ export function attachSocketServer(httpServer: HttpServer) {
 
     socket.on(
       "send_message",
-      async (
+      safeAsyncHandler(async (
         payload: {
           matchId?: string;
           content?: string;
@@ -270,10 +290,10 @@ export function attachSocketServer(httpServer: HttpServer) {
         });
 
         ack?.({ success: true, message: serializedForSender });
-      },
+      })
     );
 
-    socket.on("typing_start", async (payload: { matchId?: string }, ack?: Ack) => {
+    socket.on("typing_start", safeAsyncHandler(async (payload: { matchId?: string }, ack?: Ack) => {
       const matchId = parseBigInt(payload?.matchId);
 
       if (!matchId) {
@@ -293,9 +313,9 @@ export function attachSocketServer(httpServer: HttpServer) {
         userId: userKey,
       });
       ack?.({ success: true });
-    });
+    }));
 
-    socket.on("typing_stop", async (payload: { matchId?: string }, ack?: Ack) => {
+    socket.on("typing_stop", safeAsyncHandler(async (payload: { matchId?: string }, ack?: Ack) => {
       const matchId = parseBigInt(payload?.matchId);
 
       if (!matchId) {
@@ -315,9 +335,9 @@ export function attachSocketServer(httpServer: HttpServer) {
         userId: userKey,
       });
       ack?.({ success: true });
-    });
+    }));
 
-    socket.on("mark_read", async (payload: { matchId?: string; messageId?: string }, ack?: Ack) => {
+    socket.on("mark_read", safeAsyncHandler(async (payload: { matchId?: string; messageId?: string }, ack?: Ack) => {
       const matchId = parseBigInt(payload?.matchId);
       const messageId = parseBigInt(payload?.messageId);
 
@@ -341,9 +361,9 @@ export function attachSocketServer(httpServer: HttpServer) {
         readAt: readAt.toISOString(),
       });
       ack?.({ success: true, readAt: readAt.toISOString() });
-    });
+    }));
 
-    socket.on("react_message", async (payload: { messageId?: string; emoji?: string }, ack?: Ack) => {
+    socket.on("react_message", safeAsyncHandler(async (payload: { messageId?: string; emoji?: string }, ack?: Ack) => {
       const messageId = parseBigInt(payload?.messageId);
       const emoji = typeof payload?.emoji === "string" ? payload.emoji : "";
 
@@ -368,9 +388,9 @@ export function attachSocketServer(httpServer: HttpServer) {
       };
       io.to(roomForMatch(updated.conversation.matchId)).emit("message_reaction", eventPayload);
       ack?.({ success: true, ...eventPayload });
-    });
+    }));
 
-    socket.on("delete_message", async (payload: { messageId?: string }, ack?: Ack) => {
+    socket.on("delete_message", safeAsyncHandler(async (payload: { messageId?: string }, ack?: Ack) => {
       const messageId = parseBigInt(payload?.messageId);
 
       if (!messageId) {
@@ -393,7 +413,7 @@ export function attachSocketServer(httpServer: HttpServer) {
 
       socket.emit("message_deleted", serializeMessage(updated, userId));
       ack?.({ success: true, message: serializeMessage(updated, userId) });
-    });
+    }));
 
     socket.on("webrtc_signal", (payload: { to: string; type: string; sdp?: any; candidate?: any }) => {
       io.to(`user:${payload.to}`).emit("webrtc_signal", {
@@ -404,7 +424,7 @@ export function attachSocketServer(httpServer: HttpServer) {
       });
     });
 
-    socket.on("disconnect", async () => {
+    socket.on("disconnect", safeAsyncHandler(async () => {
       const count = Math.max((onlineUsers.get(userKey) ?? 1) - 1, 0);
 
       if (count > 0) {
@@ -416,7 +436,7 @@ export function attachSocketServer(httpServer: HttpServer) {
       clearActiveMatchRooms(userId);
       await prisma.user.update({ where: { id: userId }, data: { lastActiveAt: new Date() } }).catch(() => undefined);
       io.emit("presence_update", { userId: userKey, isOnline: false });
-    });
+    }));
   });
 
   return io;
