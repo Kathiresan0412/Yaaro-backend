@@ -1,5 +1,5 @@
 import { Router, type NextFunction, type Response } from "express";
-import type { UserProfile } from "@prisma/client";
+import type { Gender, UserProfile } from "@prisma/client";
 import { prisma } from "../config/database";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { isSupportedImageUploadSource, uploadProfilePhoto } from "../services/media.service";
@@ -92,6 +92,31 @@ function cleanInteger(value: unknown, min: number, max: number) {
   }
 
   return Math.min(max, Math.max(min, numberValue));
+}
+
+function parseCoreGender(value: unknown): Gender | null {
+  return value === "male" || value === "female" || value === "non_binary" || value === "other" ? value : null;
+}
+
+function parseDateOfBirth(value: unknown) {
+  const raw = cleanString(value, 20);
+
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return null;
+  }
+
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isAdult(dateOfBirth: Date) {
+  const today = new Date();
+  const age = today.getUTCFullYear() - dateOfBirth.getUTCFullYear();
+  const birthdayThisYear = new Date(
+    Date.UTC(today.getUTCFullYear(), dateOfBirth.getUTCMonth(), dateOfBirth.getUTCDate()),
+  );
+  const hasHadBirthday = today.getTime() >= birthdayThisYear.getTime();
+  return age > 18 || (age === 18 && hasHadBirthday);
 }
 
 function starSign(dateOfBirth?: Date | null) {
@@ -466,12 +491,18 @@ profileRouter.put("/anthem", async (req: AuthenticatedRequest, res, next) => {
 profileRouter.put("/me", async (req: AuthenticatedRequest, res, next) => {
   try {
     const currentUserId = userId(req);
+    const user = await prisma.user.findUnique({
+      where: { id: currentUserId },
+      select: { firstName: true, lastName: true },
+    });
     const existingCoreProfile = await prisma.profile.findUnique({
       where: { userId: currentUserId },
-      select: { dateOfBirth: true, nameEn: true },
+      select: { dateOfBirth: true, nameEn: true, gender: true },
     });
+    const coreGender = "gender" in req.body ? parseCoreGender(req.body.gender) : null;
+    const coreDateOfBirth = "dateOfBirth" in req.body ? parseDateOfBirth(req.body.dateOfBirth) : null;
     const data: Record<string, string | number | string[] | null> = {
-      starSign: starSign(existingCoreProfile?.dateOfBirth),
+      starSign: starSign(coreDateOfBirth ?? existingCoreProfile?.dateOfBirth),
     };
 
     for (const field of scalarProfileFields) {
@@ -494,9 +525,51 @@ profileRouter.put("/me", async (req: AuthenticatedRequest, res, next) => {
       data.displayName = existingCoreProfile?.nameEn ?? null;
     }
 
+    if ("gender" in req.body && !coreGender) {
+      return res.status(400).json({ success: false, message: "Choose a valid gender." });
+    }
+
+    if ("dateOfBirth" in req.body && !coreDateOfBirth) {
+      return res.status(400).json({ success: false, message: "Choose a valid date of birth." });
+    }
+
+    if (coreDateOfBirth && !isAdult(coreDateOfBirth)) {
+      return res.status(400).json({ success: false, message: "You must be at least 18 years old." });
+    }
+
+    if ((coreGender || coreDateOfBirth) && !existingCoreProfile && (!coreGender || !coreDateOfBirth)) {
+      return res.status(400).json({
+        success: false,
+        message: "Gender and date of birth are required to activate matching.",
+      });
+    }
+
     const hobbies = cleanArray(req.body.hobbies, 10);
 
     await prisma.$transaction(async (tx) => {
+      if (coreGender || coreDateOfBirth) {
+        const createGender = coreGender ?? existingCoreProfile?.gender;
+        const createDateOfBirth = coreDateOfBirth ?? existingCoreProfile?.dateOfBirth;
+        const fallbackName =
+          data.displayName?.toString() ||
+          [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
+          "Yaaro Member";
+
+        await tx.profile.upsert({
+          where: { userId: currentUserId },
+          update: {
+            ...(coreGender ? { gender: coreGender } : {}),
+            ...(coreDateOfBirth ? { dateOfBirth: coreDateOfBirth } : {}),
+          },
+          create: {
+            userId: currentUserId,
+            nameEn: fallbackName,
+            gender: createGender!,
+            dateOfBirth: createDateOfBirth!,
+          },
+        });
+      }
+
       await tx.userProfile.upsert({
         where: { userId: currentUserId },
         update: data,
@@ -755,9 +828,20 @@ export async function completeOnboarding(
     // Fetch user's first name to use as display name fallback
     const userRecord = await prisma.user.findUnique({
       where: { id: currentUserId },
-      select: { firstName: true },
+      select: { firstName: true, profile: { select: { id: true } } },
     });
     const defaultDisplayName = userRecord?.firstName || "Yaaro Member";
+
+    if (!userRecord?.profile) {
+      return res.status(422).json({
+        success: false,
+        message: "Add your date of birth and gender before matching.",
+        errors: {
+          dateOfBirth: "Date of birth is required for matching.",
+          gender: "Gender is required for matching.",
+        },
+      });
+    }
 
     // 1. Photos Seeding is skipped (no default photos stored in database)
 
