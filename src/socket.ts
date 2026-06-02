@@ -69,6 +69,16 @@ function clearActiveMatchRooms(userId: bigint) {
   activeMatchRooms.delete(userId.toString());
 }
 
+function emitMessageToUser(
+  io: Server,
+  userId: bigint | string,
+  message: ReturnType<typeof serializeMessage>,
+) {
+  const room = `user:${userId.toString()}`;
+  io.to(room).emit("new_message", message);
+  io.to(room).emit("receive_message", message);
+}
+
 function scheduleUnreadMessageEmail(input: { userId: bigint; messageId: bigint; matchId: bigint; senderId: bigint }) {
   setTimeout(async () => {
     const message = await prisma.message.findFirst({
@@ -230,8 +240,17 @@ export function attachSocketServer(httpServer: HttpServer) {
 
         const serializedForSender = serializeMessage(created.message, userId);
         const receiverId = created.conversation.user1Id === userId ? created.conversation.user2Id : created.conversation.user1Id;
-        io.to(`user:${userKey}`).emit("new_message", serializedForSender);
-        io.to(`user:${receiverId.toString()}`).emit("new_message", serializeMessage(created.message, receiverId));
+        emitMessageToUser(io, userKey, serializedForSender);
+        emitMessageToUser(io, receiverId, serializeMessage(created.message, receiverId));
+
+        if (onlineUsers.has(receiverId.toString())) {
+          io.to(`user:${userKey}`).emit("message_delivered", {
+            matchId: matchId.toString(),
+            messageId: created.message.id.toString(),
+            deliveredTo: receiverId.toString(),
+            deliveredAt: new Date().toISOString(),
+          });
+        }
 
         if (!isUserInMatchRoom(receiverId, matchId)) {
           await notifyUser({
@@ -253,6 +272,50 @@ export function attachSocketServer(httpServer: HttpServer) {
         ack?.({ success: true, message: serializedForSender });
       },
     );
+
+    socket.on("typing_start", async (payload: { matchId?: string }, ack?: Ack) => {
+      const matchId = parseBigInt(payload?.matchId);
+
+      if (!matchId) {
+        ack?.({ success: false, message: "Match id is invalid." });
+        return;
+      }
+
+      const conversation = await getConversationForMatch(userId, matchId);
+
+      if (!conversation) {
+        ack?.({ success: false, message: "Match not found." });
+        return;
+      }
+
+      socket.to(roomForMatch(matchId)).emit("typing_start", {
+        matchId: matchId.toString(),
+        userId: userKey,
+      });
+      ack?.({ success: true });
+    });
+
+    socket.on("typing_stop", async (payload: { matchId?: string }, ack?: Ack) => {
+      const matchId = parseBigInt(payload?.matchId);
+
+      if (!matchId) {
+        ack?.({ success: false, message: "Match id is invalid." });
+        return;
+      }
+
+      const conversation = await getConversationForMatch(userId, matchId);
+
+      if (!conversation) {
+        ack?.({ success: false, message: "Match not found." });
+        return;
+      }
+
+      socket.to(roomForMatch(matchId)).emit("typing_stop", {
+        matchId: matchId.toString(),
+        userId: userKey,
+      });
+      ack?.({ success: true });
+    });
 
     socket.on("mark_read", async (payload: { matchId?: string; messageId?: string }, ack?: Ack) => {
       const matchId = parseBigInt(payload?.matchId);
