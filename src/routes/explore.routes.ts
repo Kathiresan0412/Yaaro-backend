@@ -186,7 +186,7 @@ async function exploreCards(
 ) {
   const viewer = await prisma.user.findUnique({
     where: { id: viewerId },
-    include: { onboardingProfile: true, hobbies: true, location: true },
+    include: { onboardingProfile: true, hobbies: true, location: true, profile: true },
   });
 
   if (!viewer) {
@@ -241,6 +241,7 @@ async function exploreCards(
   const viewerLatitude = effectiveLatitude(viewer.location);
   const viewerLongitude = effectiveLongitude(viewer.location);
   const viewerHobbies = viewer.hobbies.map((item) => item.hobby);
+  const shouldApplyViewerFilters = Boolean(viewer.profile);
 
   return candidates
     .flatMap((candidate) => {
@@ -249,11 +250,15 @@ async function exploreCards(
       }
 
       const age = calculateAge(candidate.profile.dateOfBirth);
-      if (age < preferences.minAge || age > preferences.maxAge) {
+      if (shouldApplyViewerFilters && (age < preferences.minAge || age > preferences.maxAge)) {
         return [];
       }
 
-      if (preferences.showGender !== "everyone" && candidate.profile.gender !== preferences.showGender) {
+      if (
+        shouldApplyViewerFilters &&
+        preferences.showGender !== "everyone" &&
+        candidate.profile.gender !== preferences.showGender
+      ) {
         return [];
       }
 
@@ -271,11 +276,16 @@ async function exploreCards(
           ? haversineKm(viewerLatitude, viewerLongitude, candidateLatitude, candidateLongitude)
           : null;
 
-      if (!preferences.globalMode && distanceKm !== null && distanceKm > preferences.maxDistanceKm) {
+      if (
+        shouldApplyViewerFilters &&
+        !preferences.globalMode &&
+        distanceKm !== null &&
+        distanceKm > preferences.maxDistanceKm
+      ) {
         return [];
       }
 
-      if (preferences.showPhotosOnly && candidate.onboardingPhotos.length === 0) {
+      if (shouldApplyViewerFilters && preferences.showPhotosOnly && candidate.onboardingPhotos.length === 0) {
         return [];
       }
 

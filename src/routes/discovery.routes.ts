@@ -324,6 +324,7 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
     const viewerLatitude = effectiveLatitude(viewer.location);
     const viewerLongitude = effectiveLongitude(viewer.location);
     const viewerHobbies = viewer.hobbies.map((item) => item.hobby);
+    const shouldApplyViewerFilters = Boolean(viewer.profile);
 
     const distanceFallbackCards: DiscoveryCard[] = [];
 
@@ -334,11 +335,12 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
         }
 
         const age = calculateAge(candidate.profile.dateOfBirth);
-        if (age < preferences.minAge || age > preferences.maxAge) {
+        if (shouldApplyViewerFilters && (age < preferences.minAge || age > preferences.maxAge)) {
           return [];
         }
 
         if (
+          shouldApplyViewerFilters &&
           preferences.showGender !== "everyone" &&
           candidate.profile.gender !== preferences.showGender
         ) {
@@ -360,12 +362,13 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
             : null;
 
         const outsideDistance =
+          shouldApplyViewerFilters &&
           !preferences.globalMode &&
           distanceKm !== null &&
           distanceKm > preferences.maxDistanceKm;
 
         const photos = candidate.onboardingPhotos;
-        if (preferences.showPhotosOnly && photos.length === 0) {
+        if (shouldApplyViewerFilters && preferences.showPhotosOnly && photos.length === 0) {
           return [];
         }
 
