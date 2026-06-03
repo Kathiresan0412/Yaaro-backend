@@ -85,11 +85,11 @@ function stripePriceForTier(tier: PaidTier) {
 }
 
 function checkoutSuccessUrl() {
-  return `${env.publicWebUrl.replace(/\/$/, "")}/app/premium?checkout=success`;
+  return `yaaro0://payment-success`;
 }
 
 function checkoutCancelUrl() {
-  return `${env.publicWebUrl.replace(/\/$/, "")}/app/premium?checkout=cancelled`;
+  return `yaaro0://payment-cancel`;
 }
 
 function stripeUnitAmount(plan: CheckoutPlan) {
