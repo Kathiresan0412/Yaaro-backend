@@ -1,35 +1,5 @@
 import "dotenv/config";
 
-// Helper to get active Stripe keys based on mode
-function getStripeConfig() {
-  const mode = (process.env.STRIPE_MODE ?? "sandbox") as "sandbox" | "production";
-  const isSandbox = mode !== "production";
-
-  return {
-    mode,
-    publishableKey: isSandbox
-      ? process.env.STRIPE_PUBLISHABLE_KEY_SANDBOX ?? process.env.STRIPE_PUBLISHABLE_KEY ?? ""
-      : process.env.STRIPE_PUBLISHABLE_KEY_PRODUCTION ?? "",
-    secretKey: isSandbox
-      ? process.env.STRIPE_SECRET_KEY_SANDBOX ?? process.env.STRIPE_SECRET_KEY ?? ""
-      : process.env.STRIPE_SECRET_KEY_PRODUCTION ?? "",
-    webhookSecret: isSandbox
-      ? process.env.STRIPE_WEBHOOK_SECRET_SANDBOX ?? process.env.STRIPE_WEBHOOK_SECRET ?? ""
-      : process.env.STRIPE_WEBHOOK_SECRET_PRODUCTION ?? "",
-    pricePlus: isSandbox
-      ? process.env.STRIPE_PRICE_PLUS_SANDBOX ?? process.env.STRIPE_PRICE_PLUS ?? ""
-      : process.env.STRIPE_PRICE_PLUS_PRODUCTION ?? "",
-    priceGold: isSandbox
-      ? process.env.STRIPE_PRICE_GOLD_SANDBOX ?? process.env.STRIPE_PRICE_GOLD ?? ""
-      : process.env.STRIPE_PRICE_GOLD_PRODUCTION ?? "",
-    pricePlatinum: isSandbox
-      ? process.env.STRIPE_PRICE_PLATINUM_SANDBOX ?? process.env.STRIPE_PRICE_PLATINUM ?? ""
-      : process.env.STRIPE_PRICE_PLATINUM_PRODUCTION ?? "",
-  };
-}
-
-const stripeConfig = getStripeConfig();
-
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 8000),
@@ -50,14 +20,14 @@ export const env = {
   smtpPassword: process.env.SMTP_PASSWORD ?? "",
   mailFrom: process.env.MAIL_FROM ?? process.env.SMTP_USER ?? "",
   moderationAdminEmail: process.env.MODERATION_ADMIN_EMAIL ?? process.env.MAIL_FROM ?? process.env.SMTP_USER ?? "",
-  // Active Stripe keys (resolved from STRIPE_MODE at startup — see getStripeConfig above)
-  stripeMode: stripeConfig.mode,
-  stripePublishableKey: stripeConfig.publishableKey,
-  stripeSecretKey: stripeConfig.secretKey,
-  stripeWebhookSecret: stripeConfig.webhookSecret,
-  stripePricePlus: stripeConfig.pricePlus,
-  stripePriceGold: stripeConfig.priceGold,
-  stripePricePlatinum: stripeConfig.pricePlatinum,
+  // Active Stripe keys
+  stripeMode: process.env.STRIPE_MODE ?? "sandbox",
+  stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+  stripePricePlus: process.env.STRIPE_PRICE_PLUS ?? "",
+  stripePriceGold: process.env.STRIPE_PRICE_GOLD ?? "",
+  stripePricePlatinum: process.env.STRIPE_PRICE_PLATINUM ?? "",
   sendgridApiKey: process.env.SENDGRID_API_KEY ?? "",
   sendgridFromEmail: process.env.SENDGRID_FROM_EMAIL ?? process.env.MAIL_FROM ?? process.env.SMTP_USER ?? "",
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? "",
