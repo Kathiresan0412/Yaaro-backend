@@ -6,6 +6,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middl
 import {
   createMessage,
   findAccessibleMessage,
+  getConversationByIdOrMatchId,
   getConversationForMatch,
   markConversationRead,
   serializeMessage,
@@ -158,7 +159,7 @@ messagesRouter.get("/conversations", async (req: AuthenticatedRequest, res, next
 
       return [
         {
-          id: conversation.matchId.toString(),
+          id: conversation.id.toString(),
           conversationId: conversation.id.toString(),
           matchedAt: conversation.match.matchedAt.toISOString(),
           isNew: false,
@@ -174,9 +175,9 @@ messagesRouter.get("/conversations", async (req: AuthenticatedRequest, res, next
           },
           lastMessage: conversation.lastMessagePreview
             ? {
-                preview: conversation.lastMessagePreview,
-                sentAt: conversation.lastMessageAt?.toISOString() ?? null,
-              }
+              preview: conversation.lastMessagePreview,
+              sentAt: conversation.lastMessageAt?.toISOString() ?? null,
+            }
             : null,
           unreadCount:
             conversation.user1Id === userId ? conversation.user1UnreadCount : conversation.user2UnreadCount,
@@ -195,15 +196,15 @@ messagesRouter.get("/messages/:matchId", async (req: AuthenticatedRequest, res, 
     const userId = currentUserId(req);
     const matchIdStr = req.params.matchId;
     if (!/^\d+$/.test(matchIdStr)) {
-      return res.status(400).json({ success: false, message: "Invalid match ID." });
+      return res.status(400).json({ success: false, message: "Invalid ID." });
     }
-    const matchId = BigInt(matchIdStr);
+    const id = BigInt(matchIdStr);
     const limit = parseLimit(req.query.limit);
     const cursor = typeof req.query.cursor === "string" && req.query.cursor ? BigInt(req.query.cursor) : null;
-    const conversation = await getConversationForMatch(userId, matchId);
+    const conversation = await getConversationByIdOrMatchId(userId, id);
 
     if (!conversation) {
-      return res.status(404).json({ success: false, message: "Match not found." });
+      return res.status(404).json({ success: false, message: "Conversation not found." });
     }
 
     const messages = await prisma.message.findMany({
@@ -237,7 +238,9 @@ messagesRouter.post("/messages/:matchId", async (req: AuthenticatedRequest, res,
   try {
     const userId = currentUserId(req);
     const matchIdStr = req.params.matchId;
+    console.log("xxxxxxx Backend POST /messages/:matchId - matchIdStr:", JSON.stringify(matchIdStr));
     if (!/^\d+$/.test(matchIdStr)) {
+      console.log("xxxxxxx Backend POST /messages/:matchId - Regex failed for:", JSON.stringify(matchIdStr));
       return res.status(400).json({ success: false, message: "Invalid match ID." });
     }
     const matchId = BigInt(matchIdStr);
