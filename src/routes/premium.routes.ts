@@ -18,6 +18,47 @@ import { notifyUser } from "../services/notification.service";
 
 export const premiumRouter = Router();
 
+// ---------------------------------------------------------------------------
+// Stripe webhook signature verification (HMAC-SHA256, no SDK required)
+// ---------------------------------------------------------------------------
+import { createHmac, timingSafeEqual } from "crypto";
+
+function verifyStripeSignature(rawBody: Buffer, sigHeader: string, secret: string): boolean {
+  try {
+    // sig header format: "t=<timestamp>,v1=<sig1>,v1=<sig2>,..."
+    const parts = Object.fromEntries(
+      sigHeader.split(",").map((part) => part.split("=") as [string, string]),
+    );
+    const timestamp = parts["t"];
+    const signatures = sigHeader
+      .split(",")
+      .filter((p) => p.startsWith("v1="))
+      .map((p) => p.slice(3));
+
+    if (!timestamp || signatures.length === 0) return false;
+
+    // Reject if timestamp is more than 5 minutes old
+    const tolerance = 300;
+    if (Math.abs(Date.now() / 1000 - Number(timestamp)) > tolerance) return false;
+
+    const payload = `${timestamp}.${rawBody.toString("utf8")}`;
+    const expected = createHmac("sha256", secret).update(payload, "utf8").digest("hex");
+    const expectedBuf = Buffer.from(expected, "hex");
+
+    return signatures.some((sig) => {
+      try {
+        const sigBuf = Buffer.from(sig, "hex");
+        return sigBuf.length === expectedBuf.length && timingSafeEqual(sigBuf, expectedBuf);
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+// ---------------------------------------------------------------------------
+
 const PAID_TIERS = ["plus", "gold", "platinum"] as const;
 
 type PaidTier = (typeof PAID_TIERS)[number];
@@ -312,7 +353,7 @@ premiumRouter.post("/payments/create-checkout", requireAuth, async (req: Authent
       },
     });
 
-    res.status(201).json({ success: true, checkoutUrl: session.url, sessionId: session.id });
+    res.status(201).json({ success: true, checkoutUrl: session.url, sessionId: session.id, stripeMode: env.stripeMode });
   } catch (error) {
     next(error);
   }
@@ -320,6 +361,22 @@ premiumRouter.post("/payments/create-checkout", requireAuth, async (req: Authent
 
 premiumRouter.post("/payments/webhook", async (req, res, next) => {
   try {
+    // Verify Stripe webhook signature when the secret is configured.
+    if (env.stripeWebhookSecret) {
+      const sig = req.headers["stripe-signature"] as string | undefined;
+      if (!sig) {
+        return res.status(400).json({ error: "Missing stripe-signature header." });
+      }
+
+      // Reconstruct the signed payload. Express must have raw body available
+      // (use express.raw() on this route, not express.json()).
+      const rawBody: Buffer = (req as unknown as { rawBody?: Buffer }).rawBody ?? Buffer.from(JSON.stringify(req.body));
+      const isValid = verifyStripeSignature(rawBody, sig, env.stripeWebhookSecret);
+      if (!isValid) {
+        return res.status(400).json({ error: "Webhook signature verification failed." });
+      }
+    }
+
     const event = req.body as {
       type?: string;
       data?: { object?: Record<string, unknown> };

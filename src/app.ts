@@ -23,6 +23,23 @@ app.use((req, res, next) => {
   return next();
 });
 
+// Capture raw body for Stripe webhook signature verification before JSON parsing
+app.use((req, res, next) => {
+  if (req.originalUrl === "/api/payments/webhook" || req.originalUrl === "/api/v1/payments/webhook") {
+    let data = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      data += chunk;
+    });
+    req.on("end", () => {
+      (req as unknown as { rawBody: Buffer }).rawBody = Buffer.from(data, "utf8");
+      next();
+    });
+  } else {
+    next();
+  }
+});
+
 app.use(express.json({ limit: "8mb" }));
 app.use(express.urlencoded({ extended: true }));
 
