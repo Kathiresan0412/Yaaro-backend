@@ -19,7 +19,7 @@ export function isSupportedImageUploadSource(value: string) {
 }
 
 export function isSupportedAudioUploadSource(value: string) {
-  return /^data:audio\/(webm|mpeg|mp4|wav|ogg);base64,/i.test(value) || /^https?:\/\//i.test(value);
+  return /^data:audio\/(webm|mpeg|mp4|m4a|x-m4a|mp4a-latm|aac|wav|ogg);base64,/i.test(value) || /^https?:\/\//i.test(value);
 }
 
 export async function uploadProfilePhoto(source: string, userId: bigint): Promise<{ secure_url: string }> {
