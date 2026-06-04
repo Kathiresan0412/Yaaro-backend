@@ -152,8 +152,10 @@ async function activateSubscription(input: {
   stripeCustomerId?: string | null;
   checkoutSessionId?: string | null;
 }) {
+  console.log(`[activateSubscription] START userId=${input.userId} tier=${input.tier} stripeSubId=${input.stripeSubscriptionId} sessionId=${input.checkoutSessionId}`);
   const now = new Date();
   const plan = await ensureSubscriptionPlan(input.tier);
+  console.log(`[activateSubscription] plan found: id=${plan.id} slug=${plan.slug} durationDays=${plan.durationDays}`);
 
   const subscription = await prisma.subscription.upsert({
     where: input.stripeSubscriptionId
@@ -180,9 +182,10 @@ async function activateSubscription(input: {
     },
     include: { plan: true },
   });
+  console.log(`[activateSubscription] subscription upserted: id=${subscription.id} status=${subscription.status} endsAt=${subscription.endsAt}`);
 
   if (input.checkoutSessionId) {
-    await prisma.payment.updateMany({
+    const updateResult = await prisma.payment.updateMany({
       where: { checkoutSessionId: input.checkoutSessionId },
       data: {
         subscriptionId: subscription.id,
@@ -191,8 +194,10 @@ async function activateSubscription(input: {
         paidAt: now,
       },
     });
+    console.log(`[activateSubscription] payment rows updated: count=${updateResult.count}`);
   }
 
+  console.log(`[activateSubscription] DONE subscription.id=${subscription.id}`);
   return subscription;
 }
 
@@ -353,6 +358,7 @@ premiumRouter.post("/payments/create-checkout", requireAuth, async (req: Authent
       },
     });
 
+    console.log(`[create-checkout] userId=${userId} tier=${tier} sessionId=${session.id} checkoutUrl=${session.url}`);
     res.status(201).json({ success: true, checkoutUrl: session.url, sessionId: session.id, stripeMode: env.stripeMode });
   } catch (error) {
     next(error);
