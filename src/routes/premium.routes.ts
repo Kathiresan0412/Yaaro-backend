@@ -415,6 +415,104 @@ premiumRouter.post("/payments/webhook", async (req, res, next) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Verify a Stripe checkout session and activate the subscription if paid.
+// Call this from the mobile app after returning from the Stripe checkout URL.
+// ---------------------------------------------------------------------------
+premiumRouter.post("/payments/verify-session", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = currentUserId(req);
+    const sessionId = String(req.body.sessionId || "");
+
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: "sessionId is required." });
+    }
+
+    // Make sure this session belongs to the authenticated user.
+    const payment = await prisma.payment.findUnique({
+      where: { checkoutSessionId: sessionId },
+      include: { plan: true },
+    });
+
+    if (!payment || payment.userId !== userId) {
+      return res.status(404).json({ success: false, message: "Payment session not found." });
+    }
+
+    // Already activated — return success immediately.
+    if (payment.status === "completed" && payment.subscriptionId) {
+      const subscription = await prisma.subscription.findUnique({
+        where: { id: payment.subscriptionId },
+        include: { plan: true },
+      });
+      return res.json({
+        success: true,
+        alreadyActivated: true,
+        subscription: subscription && {
+          id: subscription.id.toString(),
+          plan: subscription.plan.slug,
+          status: subscription.status,
+          startsAt: subscription.startsAt.toISOString(),
+          endsAt: subscription.endsAt.toISOString(),
+        },
+      });
+    }
+
+    if (!env.stripeSecretKey) {
+      return res.status(503).json({ success: false, message: "Stripe is not configured." });
+    }
+
+    // Fetch the session from Stripe to confirm payment status.
+    const stripeRes = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`, {
+      headers: { Authorization: `Bearer ${env.stripeSecretKey}` },
+    });
+    const session = (await stripeRes.json()) as {
+      id?: string;
+      payment_status?: string;
+      status?: string;
+      subscription?: string;
+      customer?: string;
+      metadata?: Record<string, string>;
+      client_reference_id?: string;
+      error?: { message?: string };
+    };
+
+    if (!stripeRes.ok) {
+      return res.status(502).json({ success: false, message: session.error?.message ?? "Stripe error." });
+    }
+
+    // Session not paid yet.
+    if (session.payment_status !== "paid" && session.status !== "complete") {
+      return res.json({ success: false, pending: true, message: "Payment has not been completed yet." });
+    }
+
+    const tier = session.metadata?.tier;
+    if (!isPaidTier(tier)) {
+      return res.status(400).json({ success: false, message: "Subscription tier not found in session metadata." });
+    }
+
+    const subscription = await activateSubscription({
+      userId,
+      tier,
+      stripeSubscriptionId: session.subscription ?? null,
+      stripeCustomerId: session.customer ?? null,
+      checkoutSessionId: sessionId,
+    });
+
+    res.json({
+      success: true,
+      subscription: {
+        id: subscription.id.toString(),
+        plan: subscription.plan.slug,
+        status: subscription.status,
+        startsAt: subscription.startsAt.toISOString(),
+        endsAt: subscription.endsAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 premiumRouter.post("/payments/cancel", requireAuth, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = currentUserId(req);
