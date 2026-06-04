@@ -5,6 +5,7 @@ import { env } from "../config/env";
 import { prisma } from "../config/database";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { createAccessToken } from "../utils/token";
+import type { AuthenticatedRequest } from "../middleware/auth.middleware";
 
 const accessCookie = "yaaro0_access";
 const refreshCookie = "yaaro0_refresh";
@@ -731,4 +732,163 @@ export async function adminLogin(req: Request, res: Response) {
       role: admin.role,
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Password management for authenticated users
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/auth/password-status
+ * Returns whether the authenticated user currently has a password set.
+ * OAuth-only users will have hasPassword: false.
+ */
+export async function passwordStatus(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth?.userId;
+  if (!userId) {
+    return res.status(401).json({ success: false, message: "Authentication required." });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { passwordHash: true, oauthProvider: true },
+  });
+
+  if (!user) {
+    return res.status(404).json({ success: false, message: "User not found." });
+  }
+
+  return res.json({
+    success: true,
+    hasPassword: user.passwordHash !== null && user.passwordHash !== "",
+    oauthProvider: user.oauthProvider ?? null,
+  });
+}
+
+/**
+ * POST /api/auth/set-password
+ * Allows OAuth-only users (who have no password) to set one for the first time.
+ * Body: { password, confirmPassword }
+ */
+export async function setPassword(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth?.userId;
+  if (!userId) {
+    return res.status(401).json({ success: false, message: "Authentication required." });
+  }
+
+  const password = typeof req.body.password === "string" ? req.body.password : "";
+  const confirmPassword = typeof req.body.confirmPassword === "string" ? req.body.confirmPassword : "";
+
+  if (!password || !confirmPassword) {
+    return res.status(400).json({ success: false, message: "Password and confirmation are required." });
+  }
+
+  if (password !== confirmPassword) {
+    return res.status(400).json({ success: false, message: "Passwords do not match." });
+  }
+
+  if (!isStrongPassword(password)) {
+    return res.status(400).json({
+      success: false,
+      message: "Password must be 8+ characters with uppercase, number, and special character.",
+    });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { passwordHash: true },
+  });
+
+  if (!user) {
+    return res.status(404).json({ success: false, message: "User not found." });
+  }
+
+  if (user.passwordHash) {
+    return res.status(409).json({
+      success: false,
+      message: "You already have a password. Use the change-password endpoint instead.",
+    });
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      passwordHash: hashPassword(password),
+      passwordUpdatedAt: new Date(),
+    },
+  });
+
+  return res.json({ success: true, message: "Password has been set successfully." });
+}
+
+/**
+ * POST /api/auth/change-password
+ * Allows authenticated users to update their existing password.
+ * Body: { currentPassword, newPassword, confirmPassword }
+ */
+export async function changePassword(req: AuthenticatedRequest, res: Response) {
+  const userId = req.auth?.userId;
+  if (!userId) {
+    return res.status(401).json({ success: false, message: "Authentication required." });
+  }
+
+  const currentPassword = typeof req.body.currentPassword === "string" ? req.body.currentPassword : "";
+  const newPassword = typeof req.body.newPassword === "string" ? req.body.newPassword : "";
+  const confirmPassword = typeof req.body.confirmPassword === "string" ? req.body.confirmPassword : "";
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    return res.status(400).json({ success: false, message: "All password fields are required." });
+  }
+
+  if (newPassword !== confirmPassword) {
+    return res.status(400).json({ success: false, message: "New passwords do not match." });
+  }
+
+  if (!isStrongPassword(newPassword)) {
+    return res.status(400).json({
+      success: false,
+      message: "New password must be 8+ characters with uppercase, number, and special character.",
+    });
+  }
+
+  if (currentPassword === newPassword) {
+    return res.status(400).json({
+      success: false,
+      message: "New password must be different from your current password.",
+    });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { passwordHash: true },
+  });
+
+  if (!user) {
+    return res.status(404).json({ success: false, message: "User not found." });
+  }
+
+  if (!user.passwordHash) {
+    return res.status(400).json({
+      success: false,
+      message: "No password is set on this account. Use the set-password endpoint instead.",
+    });
+  }
+
+  if (!verifyPassword(currentPassword, user.passwordHash)) {
+    return res.status(401).json({ success: false, message: "Current password is incorrect." });
+  }
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: hashPassword(newPassword),
+        passwordUpdatedAt: new Date(),
+      },
+    }),
+    // Invalidate all other sessions for security
+    prisma.refreshToken.deleteMany({ where: { userId } }),
+  ]);
+
+  return res.json({ success: true, message: "Password changed successfully. Please log in again." });
 }
