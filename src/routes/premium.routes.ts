@@ -434,7 +434,12 @@ premiumRouter.post("/payments/verify-session", requireAuth, async (req: Authenti
       include: { plan: true },
     });
 
-    if (!payment || payment.userId !== userId) {
+    if (!payment) {
+      return res.status(404).json({ success: false, message: "Payment session not found." });
+    }
+
+    // Compare as strings to avoid BigInt reference equality pitfalls.
+    if (payment.userId.toString() !== userId.toString()) {
       return res.status(404).json({ success: false, message: "Payment session not found." });
     }
 
@@ -476,18 +481,22 @@ premiumRouter.post("/payments/verify-session", requireAuth, async (req: Authenti
       error?: { message?: string };
     };
 
+    console.log(`[verify-session] sessionId=${sessionId} payment_status=${session.payment_status} status=${session.status} subscription=${session.subscription} metadata=${JSON.stringify(session.metadata)}`);
+
     if (!stripeRes.ok) {
       return res.status(502).json({ success: false, message: session.error?.message ?? "Stripe error." });
     }
 
-    // Session not paid yet.
-    if (session.payment_status !== "paid" && session.status !== "complete") {
-      return res.json({ success: false, pending: true, message: "Payment has not been completed yet." });
+    // For subscription-mode sessions, Stripe sets payment_status="paid" and status="complete"
+    // after the first invoice is paid. Accept either field indicating success.
+    const isPaid = session.payment_status === "paid" || session.status === "complete";
+    if (!isPaid) {
+      return res.json({ success: false, pending: true, message: `Payment has not been completed yet. (payment_status=${session.payment_status}, status=${session.status})` });
     }
 
     const tier = session.metadata?.tier;
     if (!isPaidTier(tier)) {
-      return res.status(400).json({ success: false, message: "Subscription tier not found in session metadata." });
+      return res.status(400).json({ success: false, message: `Subscription tier not found in session metadata. metadata=${JSON.stringify(session.metadata)}` });
     }
 
     const subscription = await activateSubscription({
