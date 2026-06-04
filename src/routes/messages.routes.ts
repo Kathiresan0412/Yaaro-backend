@@ -324,6 +324,69 @@ messagesRouter.post("/messages/:matchId", async (req: AuthenticatedRequest, res,
 });
 
 messagesRouter.post(
+  "/messages/:matchId/media",
+  upload.single("image"),
+  async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const userId = currentUserId(req);
+      const matchIdStr = req.params.matchId;
+      if (!/^\d+$/.test(matchIdStr)) {
+        return res.status(400).json({ success: false, message: "Invalid match ID." });
+      }
+      const matchId = BigInt(matchIdStr);
+      const type = parseMessageType(req.body.type || "photo") ?? "photo";
+      const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: "An image file is required." });
+      }
+
+      const source = dataUriFromFile(req.file);
+      const resourceType = type === "photo" || type === "image" ? "image" : "auto";
+      const uploadResult = await uploadChatMedia(source, userId, resourceType);
+
+      const created = await createMessage({
+        userId,
+        matchId,
+        type: type === "image" ? "photo" : type,
+        content,
+        mediaUrl: uploadResult.secure_url,
+      });
+
+      if (!created) {
+        return res.status(404).json({ success: false, message: "Match not found." });
+      }
+
+      const receiverId = created.conversation.user1Id === userId ? created.conversation.user2Id : created.conversation.user1Id;
+      if (!isUserInMatchRoom(receiverId, created.conversation.matchId)) {
+        await notifyUser({
+          userId: receiverId,
+          type: "new_message",
+          title: "New message",
+          body: notificationBodyForMessage(type, content),
+          data: {
+            matchId: created.conversation.matchId.toString(),
+            senderId: userId.toString(),
+            url: `/app/messages/${created.conversation.matchId.toString()}`,
+          },
+          push: true,
+        });
+      }
+      scheduleUnreadMessageEmail({
+        userId: receiverId,
+        messageId: created.message.id,
+        matchId: created.conversation.matchId,
+        senderId: userId,
+      });
+
+      res.status(201).json({ success: true, message: serializeMessage(created.message, userId) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+messagesRouter.post(
   "/messages/:matchId/voice",
   upload.single("voice"),
   async (req: AuthenticatedRequest, res, next) => {
