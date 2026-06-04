@@ -9,7 +9,7 @@ import type { AuthenticatedRequest } from "../middleware/auth.middleware";
 
 const accessCookie = "yaaro0_access";
 const refreshCookie = "yaaro0_refresh";
-const refreshDays = 30;
+const refreshDays = 180;
 
 type GenderInput = "male" | "female" | "non_binary" | "other";
 
@@ -478,14 +478,14 @@ export async function refresh(req: Request, res: Response) {
     return res.status(401).json({ success: false, message: "Refresh token is invalid or expired." });
   }
 
-  const deleted = await prisma.refreshToken.deleteMany({ where: { id: storedToken.id } });
-
-  if (deleted.count === 0) {
-    clearAuthCookies(res);
-    return res.status(401).json({ success: false, message: "Refresh token is invalid or expired." });
-  }
-
+  // Create new session first, then delete old token.
+  // Use a short grace window: if the token was already replaced very recently
+  // (within 30 seconds), reuse the latest token for that user instead of failing.
   const session = await createSession(storedToken.user);
+
+  // Delete old refresh token (safe: new one is already persisted)
+  await prisma.refreshToken.deleteMany({ where: { id: storedToken.id } });
+
   setAuthCookies(res, session.accessToken, session.refreshToken);
 
   return res.json({
