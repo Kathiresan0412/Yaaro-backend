@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { SwipeAction, UserProfile } from "@prisma/client";
-import { prisma } from "../config/database";
+import { prisma, prismaRead } from "../config/database";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { addDays, getUserCapabilities, getUserTier, hasTier } from "../services/premium.service";
 import { notifyUser } from "../services/notification.service";
@@ -311,7 +311,8 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
     const excludeIds = [...swipedIds, ...blockedIds, viewerId];
 
     // Optimized query: push filters to DB, limit candidate pool
-    const candidates = await prisma.user.findMany({
+    // Uses read replica for this heavy query — writes still go to primary
+    const candidates = await prismaRead.user.findMany({
       where: {
         id: { notIn: excludeIds },
         onboardingCompleted: true,

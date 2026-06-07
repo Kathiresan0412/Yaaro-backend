@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { UserProfile } from "@prisma/client";
-import { prisma } from "../config/database";
+import { prisma, prismaRead } from "../config/database";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { cacheGet, cacheSet, CacheTTL } from "../services/cache.service";
 
@@ -229,7 +229,7 @@ async function exploreCards(
   // Push exclusions to database query
   const excludeIds = [...swipedIds, ...blockedIds, viewerId];
 
-  const candidates = await prisma.user.findMany({
+  const candidates = await prismaRead.user.findMany({
     where: {
       id: { notIn: excludeIds },
       onboardingCompleted: true,
