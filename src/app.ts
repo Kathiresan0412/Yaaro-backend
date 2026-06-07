@@ -1,9 +1,20 @@
 import express from "express";
+import compression from "compression";
 import { apiRouter } from "./routes";
 import { adminRouter } from "./routes/admin.routes";
 import { errorMiddleware } from "./middleware/error.middleware";
 
 export const app = express();
+
+// Gzip/deflate responses – reduces payload size by 60-80%
+app.use(compression());
+
+// Keep-alive header for persistent connections
+app.use((_req, res, next) => {
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Keep-Alive", "timeout=30");
+  next();
+});
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;

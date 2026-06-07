@@ -26,8 +26,9 @@ export const prisma =
     adapter: new PrismaPg({
       connectionString: databaseUrlForPg(),
       ssl: requiresSsl ? { rejectUnauthorized: false } : undefined,
-      max: Math.max(1, env.databasePoolMax),
-      idleTimeoutMillis: 10_000,
+      max: Math.max(5, env.databasePoolMax),          // Minimum 5 connections
+      min: Math.min(2, env.databasePoolMax),           // Keep 2 warm connections
+      idleTimeoutMillis: 30_000,                       // Keep idle connections longer
       connectionTimeoutMillis: 5_000,
     }),
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
