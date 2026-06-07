@@ -426,16 +426,18 @@ exploreRouter.get("/explore/by-goal/:goal", async (req: AuthenticatedRequest, re
 
 exploreRouter.get("/explore/nearby", async (req: AuthenticatedRequest, res, next) => {
   try {
+    const NEARBY_RADIUS_KM = 150;
+
     const cards = await exploreCards(
       currentUserId(req),
-      (_candidate, distanceKm) => distanceKm !== null && distanceKm <= 2,
+      (_candidate, distanceKm) => distanceKm !== null && distanceKm <= NEARBY_RADIUS_KM,
     );
 
     if (!cards) {
       return res.status(404).json({ success: false, message: "User not found." });
     }
 
-    res.json({ success: true, cards, radiusKm: 2 });
+    res.json({ success: true, cards, radiusKm: NEARBY_RADIUS_KM });
   } catch (error) {
     next(error);
   }

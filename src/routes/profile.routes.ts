@@ -745,7 +745,7 @@ profileRouter.put("/preferences", async (req: AuthenticatedRequest, res, next) =
     const currentUserId = userId(req);
     const minAge = cleanInteger(req.body.minAge, 18, 100) ?? 18;
     const maxAge = cleanInteger(req.body.maxAge, minAge, 100) ?? Math.max(45, minAge);
-    const maxDistanceKm = cleanInteger(req.body.maxDistanceKm, 1, 20000) ?? 50;
+    const maxDistanceKm = cleanInteger(req.body.maxDistanceKm, 1, 20000) ?? 150;
     const showGender = cleanString(req.body.showGender, 40) || "everyone";
 
     const preferences = await prisma.userPreference.upsert({

@@ -418,7 +418,7 @@ model UserPreference {
   showGender       String  @default("everyone") @map("show_gender") @db.VarChar(40)
   minAge           Int     @default(18) @map("min_age")
   maxAge           Int     @default(45) @map("max_age")
-  maxDistanceKm    Int     @default(50) @map("max_distance_km")
+  maxDistanceKm    Int     @default(150) @map("max_distance_km")
   globalMode       Boolean @default(false) @map("global_mode")
   showVerifiedOnly Boolean @default(false) @map("show_verified_only")
   showPhotosOnly   Boolean @default(true) @map("show_photos_only")
