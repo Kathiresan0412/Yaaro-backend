@@ -6,6 +6,7 @@ import { isSupportedImageUploadSource, uploadProfilePhoto } from "../services/me
 import { assertSafeText } from "../services/content-safety.service";
 import { requireTier } from "../services/premium.service";
 import { interestBadges } from "../services/interest-badges.service";
+import { invalidateUserCache } from "../services/cache.service";
 
 export const profileRouter = Router();
 
@@ -587,6 +588,9 @@ profileRouter.put("/me", async (req: AuthenticatedRequest, res, next) => {
       }
     });
 
+    // Invalidate cache so other users see updated info in discovery/matches
+    await invalidateUserCache(currentUserId);
+
     res.json({ success: true, ...(await getProfilePayload(currentUserId)) });
   } catch (error) {
     next(error);
@@ -767,6 +771,9 @@ profileRouter.put("/preferences", async (req: AuthenticatedRequest, res, next) =
       },
     });
 
+    // Preferences change the discovery results – invalidate discovery cache
+    await invalidateUserCache(currentUserId);
+
     res.json({
       success: true,
       preferences: {
@@ -801,6 +808,9 @@ profileRouter.put("/location", async (req: AuthenticatedRequest, res, next) => {
       update: { latitude, longitude, city, country },
       create: { userId: currentUserId, latitude, longitude, city, country },
     });
+
+    // Location changes affect distance-based discovery for all users
+    await invalidateUserCache(currentUserId);
 
     res.json({
       success: true,

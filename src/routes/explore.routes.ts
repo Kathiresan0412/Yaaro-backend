@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { UserProfile } from "@prisma/client";
 import { prisma } from "../config/database";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middleware";
+import { cacheGet, cacheSet, CacheTTL } from "../services/cache.service";
 
 export const exploreRouter = Router();
 
@@ -71,17 +72,24 @@ function jsonArray(value: unknown) {
 }
 
 async function exploreCategories() {
+  const cacheKey = "explore:categories";
+  const cached = await cacheGet<ExploreCategoryPayload[]>(cacheKey);
+  if (cached) return cached;
+
   const categories = await prisma.exploreCategory.findMany({
     where: { isActive: true },
     orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
   });
 
-  return categories.map<ExploreCategoryPayload>((category) => ({
+  const result = categories.map<ExploreCategoryPayload>((category) => ({
     key: category.key,
     label: category.label,
     emoji: category.emoji,
     hobbies: jsonArray(category.hobbies),
   }));
+
+  await cacheSet(cacheKey, result, CacheTTL.EXPLORE_CATEGORIES);
+  return result;
 }
 
 async function exploreVibeQuestions() {
@@ -198,18 +206,32 @@ async function exploreCards(
     update: {},
     create: { userId: viewerId },
   });
-  const swipes = await prisma.swipe.findMany({ where: { swiperId: viewerId }, select: { swipedId: true } });
-  const receivedLikes = await prisma.swipe.findMany({
-    where: { swipedId: viewerId, action: { in: ["like", "superlike"] } },
-    select: { swiperId: true },
-  });
-  const blocks = await prisma.block.findMany({
-    where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
-    select: { blockerId: true, blockedId: true },
-  });
+
+  // Parallel fetch of exclusion sets
+  const [swipes, receivedLikes, blocks] = await Promise.all([
+    prisma.swipe.findMany({ where: { swiperId: viewerId }, select: { swipedId: true } }),
+    prisma.swipe.findMany({
+      where: { swipedId: viewerId, action: { in: ["like", "superlike"] } },
+      select: { swiperId: true },
+    }),
+    prisma.block.findMany({
+      where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
+      select: { blockerId: true, blockedId: true },
+    }),
+  ]);
+
+  const swipedIds = new Set(swipes.map((swipe) => swipe.swipedId));
+  const blockedIds = new Set(
+    blocks.flatMap((block) =>
+      block.blockerId === viewerId ? [block.blockedId] : [block.blockerId],
+    ),
+  );
+  // Push exclusions to database query
+  const excludeIds = [...swipedIds, ...blockedIds, viewerId];
+
   const candidates = await prisma.user.findMany({
     where: {
-      id: { not: viewerId },
+      id: { notIn: excludeIds },
       onboardingCompleted: true,
       isActive: true,
       isBanned: false,
@@ -220,7 +242,10 @@ async function exploreCards(
     include: {
       onboardingProfile: true,
       hobbies: true,
-      onboardingPhotos: { orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }] },
+      onboardingPhotos: {
+        orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }],
+        take: 6,
+      },
       location: true,
       profile: true,
       discoveryPreference: true,
@@ -229,15 +254,10 @@ async function exploreCards(
         select: { id: true, endsAt: true },
       },
     },
+    take: 200, // Cap DB result set to avoid loading entire user table
   });
 
-  const swipedIds = new Set(swipes.map((swipe) => swipe.swipedId.toString()));
   const receivedLikeIds = new Set(receivedLikes.map((swipe) => swipe.swiperId.toString()));
-  const blockedIds = new Set(
-    blocks.map((block) =>
-      block.blockerId === viewerId ? block.blockedId.toString() : block.blockerId.toString(),
-    ),
-  );
   const viewerLatitude = effectiveLatitude(viewer.location);
   const viewerLongitude = effectiveLongitude(viewer.location);
   const viewerHobbies = viewer.hobbies.map((item) => item.hobby);
@@ -245,7 +265,7 @@ async function exploreCards(
 
   return candidates
     .flatMap((candidate) => {
-      if (!candidate.profile || swipedIds.has(candidate.id.toString()) || blockedIds.has(candidate.id.toString())) {
+      if (!candidate.profile) {
         return [];
       }
 

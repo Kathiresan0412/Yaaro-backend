@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { cacheGet, cacheSet, CacheTTL } from "./cache.service";
 
 function jsonArray(value: unknown) {
   return Array.isArray(value)
@@ -7,10 +8,18 @@ function jsonArray(value: unknown) {
 }
 
 export async function interestBadges(hobbies: string[]) {
-  const rules = await prisma.interestBadgeRule.findMany({
-    where: { isActive: true },
-    orderBy: [{ sortOrder: "asc" }, { badge: "asc" }],
-  });
+  // Cache badge rules – they rarely change
+  const cacheKey = "badges:rules";
+  let rules = await cacheGet<Array<{ badge: string; keywords: unknown; sortOrder: number }>>(cacheKey);
+
+  if (!rules) {
+    rules = await prisma.interestBadgeRule.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { badge: "asc" }],
+    });
+    await cacheSet(cacheKey, rules, CacheTTL.BADGE_RULES);
+  }
+
   const badges = new Set<string>();
 
   for (const hobby of hobbies) {

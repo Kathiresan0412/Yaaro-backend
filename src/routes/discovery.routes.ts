@@ -4,6 +4,7 @@ import { prisma } from "../config/database";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { addDays, getUserCapabilities, getUserTier, hasTier } from "../services/premium.service";
 import { notifyUser } from "../services/notification.service";
+import { cacheGet, cacheSet, cacheDel, CacheTTL } from "../services/cache.service";
 
 export const discoveryRouter = Router();
 
@@ -258,6 +259,15 @@ async function displayNameForUser(userId: bigint) {
 discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) => {
   try {
     const viewerId = currentUserId(req);
+
+    // Check discovery cache – short TTL since swipes change frequently
+    const cacheKey = `discovery:${viewerId}`;
+    const cached = await cacheGet<{ cards: DiscoveryCard[] }>(cacheKey);
+    if (cached) {
+      const limits = await getLimits(viewerId);
+      return res.json({ success: true, cards: cached.cards, limits });
+    }
+
     const viewer = await prisma.user.findUnique({
       where: { id: viewerId },
       include: {
@@ -278,18 +288,32 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
       create: { userId: viewerId },
     });
 
-    const swipes = await prisma.swipe.findMany({ where: { swiperId: viewerId }, select: { swipedId: true } });
-    const receivedLikes = await prisma.swipe.findMany({
-      where: { swipedId: viewerId, action: { in: ["like", "superlike"] } },
-      select: { swiperId: true },
-    });
-    const blocks = await prisma.block.findMany({
-      where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
-      select: { blockerId: true, blockedId: true },
-    });
+    // Parallel fetch of exclusion sets – only select IDs (lightweight)
+    const [swipes, receivedLikes, blocks] = await Promise.all([
+      prisma.swipe.findMany({ where: { swiperId: viewerId }, select: { swipedId: true } }),
+      prisma.swipe.findMany({
+        where: { swipedId: viewerId, action: { in: ["like", "superlike"] } },
+        select: { swiperId: true },
+      }),
+      prisma.block.findMany({
+        where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
+        select: { blockerId: true, blockedId: true },
+      }),
+    ]);
+
+    const swipedIds = new Set(swipes.map((swipe) => swipe.swipedId));
+    const blockedIds = new Set(
+      blocks.flatMap((block) =>
+        block.blockerId === viewerId ? [block.blockedId] : [block.blockerId],
+      ),
+    );
+    // Combine exclusion IDs for the database query
+    const excludeIds = [...swipedIds, ...blockedIds, viewerId];
+
+    // Optimized query: push filters to DB, limit candidate pool
     const candidates = await prisma.user.findMany({
       where: {
-        id: { not: viewerId },
+        id: { notIn: excludeIds },
         onboardingCompleted: true,
         isActive: true,
         isBanned: false,
@@ -302,6 +326,7 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
         hobbies: true,
         onboardingPhotos: {
           orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }],
+          take: 6, // Limit photos loaded per candidate
         },
         location: true,
         profile: true,
@@ -311,16 +336,12 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
           select: { id: true, endsAt: true },
         },
       },
+      // Fetch more than needed to allow filtering, but cap the DB result set
+      take: 200,
     });
     const limits = await getLimits(viewerId);
 
-    const swipedIds = new Set(swipes.map((swipe) => swipe.swipedId.toString()));
     const receivedLikeIds = new Set(receivedLikes.map((swipe) => swipe.swiperId.toString()));
-    const blockedIds = new Set(
-      blocks.map((block) =>
-        block.blockerId === viewerId ? block.blockedId.toString() : block.blockerId.toString(),
-      ),
-    );
     const viewerLatitude = effectiveLatitude(viewer.location);
     const viewerLongitude = effectiveLongitude(viewer.location);
     const viewerHobbies = viewer.hobbies.map((item) => item.hobby);
@@ -330,7 +351,7 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
 
     const cards: DiscoveryCard[] = candidates
       .flatMap<DiscoveryCard>((candidate) => {
-        if (!candidate.profile || swipedIds.has(candidate.id.toString()) || blockedIds.has(candidate.id.toString())) {
+        if (!candidate.profile) {
           return [];
         }
 
@@ -425,11 +446,15 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
 
     const boostedUserIds = cards.filter((card) => card.isBoosted).map((card) => BigInt(card.id));
     if (boostedUserIds.length > 0) {
-      await prisma.boost.updateMany({
+      // Fire-and-forget boost tracking for lower latency
+      prisma.boost.updateMany({
         where: { userId: { in: boostedUserIds }, startedAt: { lte: new Date() }, endsAt: { gt: new Date() } },
         data: { viewsGained: { increment: 1 } },
-      });
+      }).catch(() => {});
     }
+
+    // Cache the discovery result
+    await cacheSet(cacheKey, { cards }, CacheTTL.DISCOVERY_CARDS);
 
     res.json({ success: true, cards, limits });
   } catch (error) {
@@ -581,6 +606,12 @@ discoveryRouter.post("/swipe", async (req: AuthenticatedRequest, res, next) => {
       });
     }
 
+    // Invalidate caches affected by the swipe
+    await cacheDel(`discovery:${swiperId}`, `likes:${targetUserId}`);
+    if (isMutual) {
+      await cacheDel(`matches:${swiperId}`, `matches:${targetUserId}`);
+    }
+
     res.status(201).json({
       success: true,
       matched: isMutual,
@@ -624,6 +655,14 @@ discoveryRouter.post("/swipe/undo", async (req: AuthenticatedRequest, res, next)
         data: { isActive: false },
       }),
     ]);
+
+    // Invalidate caches for both users
+    await cacheDel(
+      `discovery:${swiperId}`,
+      `matches:${swiperId}`,
+      `matches:${lastSwipe.swipedId}`,
+      `likes:${lastSwipe.swipedId}`,
+    );
 
     res.json({ success: true, undoneUserId: lastSwipe.swipedId.toString(), limits: await getLimits(swiperId) });
   } catch (error) {

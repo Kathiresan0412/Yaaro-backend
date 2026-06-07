@@ -262,6 +262,9 @@ model User {
   @@index([status])
   @@index([role])
   @@index([isActive])
+  // Composite index for discovery candidate queries (most-filtered condition first)
+  @@index([isActive, isBanned, status, onboardingCompleted])
+  @@index([lastActiveAt])
   @@map("users")
 }
 
@@ -406,6 +409,7 @@ model UserLocation {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([latitude, longitude])
   @@map("user_locations")
 }
 
@@ -442,6 +446,7 @@ model Swipe {
   @@unique([swiperId, swipedId])
   @@index([swiperId])
   @@index([swipedId])
+  @@index([swipedId, action, createdAt])
   @@index([action])
   @@index([createdAt])
   @@map("swipes")
@@ -645,8 +650,10 @@ model Profile {
 
   @@index([userId])
   @@index([gender])
+  @@index([gender, dateOfBirth])
   @@index([country])
   @@index([caste])
+  @@index([isVerified])
   @@map("profiles")
 }
 
@@ -753,6 +760,9 @@ model Match {
   @@unique([user1Id, user2Id])
   @@index([user1Id])
   @@index([user2Id])
+  // Composite indexes for active match lookups ordered by matchedAt
+  @@index([user1Id, isActive, matchedAt])
+  @@index([user2Id, isActive, matchedAt])
   @@map("matches")
 }
 
