@@ -180,6 +180,7 @@ enum PremiumTier {
 
 model User {
   id                    BigInt    @id @default(autoincrement())
+  firebaseUid           String?   @unique @map("firebase_uid") @db.VarChar(128)
   phone                 String?   @unique @db.VarChar(20)
   phoneVerifiedAt       DateTime? @map("phone_verified_at") @db.Timestamp(0)
   email                 String?   @unique @db.VarChar(255)
@@ -257,6 +258,7 @@ model User {
   pushSubscriptions     PushSubscription[]
   analyticsEvents       AnalyticsEvent[]
 
+  @@index([firebaseUid])
   @@index([phone])
   @@index([email])
   @@index([status])

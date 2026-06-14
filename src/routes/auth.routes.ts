@@ -15,9 +15,13 @@ import {
   verifyEmail,
   verifyOtp,
 } from "../controllers/auth.controller";
+import { firebaseLogin } from "../controllers/firebase-auth.controller";
 import { requireAuth } from "../middleware/auth.middleware";
 
 export const authRouter = Router();
+
+// Firebase token bridge (mobile app → backend)
+authRouter.post("/firebase", firebaseLogin);
 
 authRouter.post("/register", register);
 authRouter.get("/verify-email/:token", verifyEmail);
