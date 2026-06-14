@@ -193,14 +193,17 @@ export function attachSocketServer(httpServer: HttpServer) {
       });
     }));
 
-    socket.on("leave_match", (payload: { matchId?: string }) => {
+    socket.on("leave_match", safeAsyncHandler(async (payload: { matchId?: string }) => {
       const matchId = parseBigInt(payload?.matchId);
 
       if (matchId) {
-        socket.leave(roomForMatch(matchId));
-        removeActiveMatchRoom(userId, matchId);
+        // Resolve to actual matchId in case a conversationId was passed
+        const conversation = await getConversationByIdOrMatchId(userId, matchId);
+        const realMatchId = conversation?.matchId ?? matchId;
+        socket.leave(roomForMatch(realMatchId));
+        removeActiveMatchRoom(userId, realMatchId);
       }
-    });
+    }));
 
     socket.on(
       "send_message",
@@ -304,15 +307,15 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      const conversation = await getConversationForMatch(userId, matchId);
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
 
       if (!conversation) {
         ack?.({ success: false, message: "Match not found." });
         return;
       }
 
-      socket.to(roomForMatch(matchId)).emit("typing_start", {
-        matchId: matchId.toString(),
+      socket.to(roomForMatch(conversation.matchId)).emit("typing_start", {
+        matchId: conversation.matchId.toString(),
         userId: userKey,
       });
       ack?.({ success: true });
@@ -326,15 +329,15 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      const conversation = await getConversationForMatch(userId, matchId);
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
 
       if (!conversation) {
         ack?.({ success: false, message: "Match not found." });
         return;
       }
 
-      socket.to(roomForMatch(matchId)).emit("typing_stop", {
-        matchId: matchId.toString(),
+      socket.to(roomForMatch(conversation.matchId)).emit("typing_stop", {
+        matchId: conversation.matchId.toString(),
         userId: userKey,
       });
       ack?.({ success: true });
@@ -349,7 +352,7 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      const conversation = await getConversationForMatch(userId, matchId);
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
 
       if (!conversation) {
         ack?.({ success: false, message: "Match not found." });
@@ -357,8 +360,8 @@ export function attachSocketServer(httpServer: HttpServer) {
       }
 
       const readAt = await markConversationRead(conversation, userId, messageId ?? undefined);
-      io.to(roomForMatch(matchId)).emit("message_read", {
-        matchId: matchId.toString(),
+      io.to(roomForMatch(conversation.matchId)).emit("message_read", {
+        matchId: conversation.matchId.toString(),
         messageId: messageId?.toString() ?? null,
         readerId: userKey,
         readAt: readAt.toISOString(),
