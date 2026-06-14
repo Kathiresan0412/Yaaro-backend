@@ -13,11 +13,16 @@ export async function interestBadges(hobbies: string[]) {
   let rules = await cacheGet<Array<{ badge: string; keywords: unknown; sortOrder: number }>>(cacheKey);
 
   if (!rules) {
-    rules = await prisma.interestBadgeRule.findMany({
-      where: { isActive: true },
-      orderBy: [{ sortOrder: "asc" }, { badge: "asc" }],
-    });
-    await cacheSet(cacheKey, rules, CacheTTL.BADGE_RULES);
+    try {
+      rules = await prisma.interestBadgeRule.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: "asc" }, { badge: "asc" }],
+      });
+      await cacheSet(cacheKey, rules, CacheTTL.BADGE_RULES);
+    } catch {
+      // Table might not exist yet — return hobbies as-is
+      return hobbies.slice(0, 12);
+    }
   }
 
   const badges = new Set<string>();

@@ -344,7 +344,7 @@ async function getProfilePayload(currentUserId: bigint) {
       showPhotosOnly: preferences.showPhotosOnly,
       incognitoMode: preferences.incognitoMode,
     },
-    badges: await interestBadges(hobbies.map((item) => item.hobby)),
+    badges: await interestBadges(hobbies.map((item) => item.hobby)).catch(() => hobbies.map((item) => item.hobby).slice(0, 12)),
     completeness: profileCompleteness({
       profile,
       hobbies: hobbies.map((item) => item.hobby),
@@ -358,6 +358,7 @@ profileRouter.get("/me", async (req: AuthenticatedRequest, res, next) => {
   try {
     res.json({ success: true, ...(await getProfilePayload(userId(req))) });
   } catch (error) {
+    console.error("[Profile /me] Error:", error);
     next(error);
   }
 });
