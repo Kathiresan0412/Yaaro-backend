@@ -256,6 +256,123 @@ async function displayNameForUser(userId: bigint) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// GET /discover/nearby — Users with fuzzy coordinates for the map view
+// ---------------------------------------------------------------------------
+
+discoveryRouter.get("/discover/nearby", async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const viewerId = currentUserId(req);
+    const NEARBY_RADIUS_KM = 50;
+
+    const viewer = await prisma.user.findUnique({
+      where: { id: viewerId },
+      include: { onboardingProfile: true, hobbies: true, location: true, profile: true },
+    });
+
+    if (!viewer) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    const preferences = await prisma.userPreference.upsert({
+      where: { userId: viewerId },
+      update: {},
+      create: { userId: viewerId },
+    });
+
+    // Use query params or viewer location
+    const qLat = decimalToNumber(req.query.lat);
+    const qLng = decimalToNumber(req.query.lng);
+    const viewerLat = qLat ?? effectiveLatitude(viewer.location);
+    const viewerLng = qLng ?? effectiveLongitude(viewer.location);
+
+    if (viewerLat === null || viewerLng === null) {
+      return res.json({ success: true, users: [] });
+    }
+
+    // Exclusion sets
+    const [swipes, blocks] = await Promise.all([
+      prisma.swipe.findMany({ where: { swiperId: viewerId }, select: { swipedId: true } }),
+      prisma.block.findMany({
+        where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
+        select: { blockerId: true, blockedId: true },
+      }),
+    ]);
+
+    const swipedIds = new Set(swipes.map((s) => s.swipedId));
+    const blockedIds = new Set(
+      blocks.flatMap((b) => (b.blockerId === viewerId ? [b.blockedId] : [b.blockerId])),
+    );
+    const excludeIds = [...swipedIds, ...blockedIds, viewerId];
+
+    const candidates = await prismaRead.user.findMany({
+      where: {
+        id: { notIn: excludeIds },
+        onboardingCompleted: true,
+        isActive: true,
+        isBanned: false,
+        status: "active",
+        onboardingProfile: { isNot: null },
+        profile: { isNot: null },
+        location: { isNot: null },
+      },
+      include: {
+        onboardingProfile: true,
+        hobbies: true,
+        onboardingPhotos: {
+          orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }],
+          take: 1,
+        },
+        location: true,
+        profile: true,
+      },
+      take: 100,
+    });
+
+    const users: Array<Record<string, unknown>> = [];
+
+    for (const candidate of candidates) {
+      if (!candidate.profile || !candidate.location) continue;
+
+      const candidateLat = effectiveLatitude(candidate.location);
+      const candidateLng = effectiveLongitude(candidate.location);
+      if (candidateLat === null || candidateLng === null) continue;
+
+      const distanceKm = haversineKm(viewerLat, viewerLng, candidateLat, candidateLng);
+      if (distanceKm > NEARBY_RADIUS_KM) continue;
+
+      const age = calculateAge(candidate.profile.dateOfBirth);
+      if (age < preferences.minAge || age > preferences.maxAge) continue;
+
+      // Fuzzy the coordinates slightly for privacy (~200m random offset)
+      const fuzzLat = candidateLat + (Math.random() - 0.5) * 0.004;
+      const fuzzLng = candidateLng + (Math.random() - 0.5) * 0.004;
+
+      const hobbies = candidate.hobbies.map((h) => h.hobby);
+
+      users.push({
+        id: candidate.id.toString(),
+        displayName:
+          candidate.onboardingProfile?.displayName ||
+          [candidate.firstName, candidate.lastName].filter(Boolean).join(" ") ||
+          "Yaaro member",
+        age,
+        latitude: fuzzLat,
+        longitude: fuzzLng,
+        photoUrl: candidate.onboardingPhotos[0]?.url ?? null,
+        isVerified: candidate.profile.isVerified,
+        distanceKm: Math.round(distanceKm * 10) / 10,
+        bio: candidate.onboardingProfile?.bio ?? null,
+        interests: hobbies.slice(0, 5),
+      });
+    }
+
+    res.json({ success: true, users });
+  } catch (error) {
+    next(error);
+  }
+});
+
 discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) => {
   try {
     const viewerId = currentUserId(req);

@@ -185,11 +185,19 @@ export function attachSocketServer(httpServer: HttpServer) {
       socket.join(roomForMatch(realMatchId));
       addActiveMatchRoom(userId, realMatchId);
       const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+
+      // Fetch last active time for the other user
+      const otherUser = await prisma.user.findUnique({
+        where: { id: otherUserId },
+        select: { lastActiveAt: true },
+      });
+
       ack?.({
         success: true,
         matchId: realMatchId.toString(),
         otherUserId: otherUserId.toString(),
         isOnline: onlineUsers.has(otherUserId.toString()),
+        lastActiveAt: otherUser?.lastActiveAt?.toISOString() ?? null,
       });
     }));
 
