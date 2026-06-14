@@ -267,7 +267,7 @@ function profileCompleteness(input: {
 }
 
 async function getProfilePayload(currentUserId: bigint) {
-  const [user, profile, hobbies, photos, location, preferences] = await Promise.all([
+  const [user, profile, hobbies, photos, location] = await Promise.all([
     prisma.user.findUnique({
       where: { id: currentUserId },
       select: {
@@ -294,12 +294,21 @@ async function getProfilePayload(currentUserId: bigint) {
       orderBy: [{ orderIndex: "asc" }, { id: "asc" }],
     }),
     prisma.userLocation.findUnique({ where: { userId: currentUserId } }),
-    prisma.userPreference.upsert({
+  ]);
+
+  // Upsert preferences separately to avoid failing the entire payload on write error
+  let preferences;
+  try {
+    preferences = await prisma.userPreference.upsert({
       where: { userId: currentUserId },
       update: {},
       create: { userId: currentUserId },
-    }),
-  ]);
+    });
+  } catch (e) {
+    console.error("[Profile /me] Failed to upsert preferences:", e);
+    // Fall back to reading existing or use defaults
+    preferences = await prisma.userPreference.findUnique({ where: { userId: currentUserId } });
+  }
 
   return {
     user: user && {
@@ -335,14 +344,14 @@ async function getProfilePayload(currentUserId: bigint) {
         updatedAt: location.updatedAt.toISOString(),
       } as const),
     preferences: {
-      showGender: preferences.showGender,
-      minAge: preferences.minAge,
-      maxAge: preferences.maxAge,
-      maxDistanceKm: preferences.maxDistanceKm,
-      globalMode: preferences.globalMode,
-      showVerifiedOnly: preferences.showVerifiedOnly,
-      showPhotosOnly: preferences.showPhotosOnly,
-      incognitoMode: preferences.incognitoMode,
+      showGender: preferences?.showGender ?? "everyone",
+      minAge: preferences?.minAge ?? 18,
+      maxAge: preferences?.maxAge ?? 45,
+      maxDistanceKm: preferences?.maxDistanceKm ?? 150,
+      globalMode: preferences?.globalMode ?? false,
+      showVerifiedOnly: preferences?.showVerifiedOnly ?? false,
+      showPhotosOnly: preferences?.showPhotosOnly ?? true,
+      incognitoMode: preferences?.incognitoMode ?? false,
     },
     badges: await interestBadges(hobbies.map((item) => item.hobby)).catch(() => hobbies.map((item) => item.hobby).slice(0, 12)),
     completeness: profileCompleteness({
@@ -356,7 +365,8 @@ async function getProfilePayload(currentUserId: bigint) {
 
 profileRouter.get("/me", async (req: AuthenticatedRequest, res, next) => {
   try {
-    res.json({ success: true, ...(await getProfilePayload(userId(req))) });
+    const payload = await getProfilePayload(userId(req));
+    res.json({ success: true, ...payload });
   } catch (error) {
     console.error("[Profile /me] Error:", error);
     next(error);
