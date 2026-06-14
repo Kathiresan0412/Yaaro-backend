@@ -7,6 +7,7 @@ import { verifyAccessToken } from "./utils/token";
 import {
   createMessage,
   findAccessibleMessage,
+  getConversationByIdOrMatchId,
   getConversationForMatch,
   markConversationRead,
   serializeMessage,
@@ -172,19 +173,21 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      const conversation = await getConversationForMatch(userId, matchId);
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
 
       if (!conversation) {
         ack?.({ success: false, message: "Match not found." });
         return;
       }
 
-      socket.join(roomForMatch(matchId));
-      addActiveMatchRoom(userId, matchId);
+      // Always join the room keyed by the actual matchId from the conversation
+      const realMatchId = conversation.matchId;
+      socket.join(roomForMatch(realMatchId));
+      addActiveMatchRoom(userId, realMatchId);
       const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
       ack?.({
         success: true,
-        matchId: matchId.toString(),
+        matchId: realMatchId.toString(),
         otherUserId: otherUserId.toString(),
         isOnline: onlineUsers.has(otherUserId.toString()),
       });
