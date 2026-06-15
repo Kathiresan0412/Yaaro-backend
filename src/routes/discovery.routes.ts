@@ -1,9 +1,10 @@
 import { Router } from "express";
 import type { SwipeAction, UserProfile } from "@prisma/client";
-import { prisma } from "../config/database";
+import { prisma, prismaRead } from "../config/database";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { addDays, getUserCapabilities, getUserTier, hasTier } from "../services/premium.service";
 import { notifyUser } from "../services/notification.service";
+import { cacheGet, cacheSet, cacheDel, CacheTTL } from "../services/cache.service";
 
 export const discoveryRouter = Router();
 
@@ -255,9 +256,157 @@ async function displayNameForUser(userId: bigint) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// GET /discover/nearby — Users with fuzzy coordinates for the map view
+// ---------------------------------------------------------------------------
+
+discoveryRouter.get("/discover/nearby", async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const viewerId = currentUserId(req);
+    // Allow client to pass radius (in km) — default 200km for broader map view
+    const NEARBY_RADIUS_KM = decimalToNumber(req.query.radius) ?? 200;
+
+    const viewer = await prisma.user.findUnique({
+      where: { id: viewerId },
+      include: { onboardingProfile: true, hobbies: true, location: true, profile: true },
+    });
+
+    if (!viewer) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    const preferences = await prisma.userPreference.upsert({
+      where: { userId: viewerId },
+      update: {},
+      create: { userId: viewerId },
+    });
+
+    // Use query params or viewer location
+    const qLat = decimalToNumber(req.query.lat);
+    const qLng = decimalToNumber(req.query.lng);
+    const viewerLat = qLat ?? effectiveLatitude(viewer.location);
+    const viewerLng = qLng ?? effectiveLongitude(viewer.location);
+
+    if (viewerLat === null || viewerLng === null) {
+      return res.json({ success: true, users: [] });
+    }
+
+    // Exclusion sets
+    const [swipes, blocks] = await Promise.all([
+      prisma.swipe.findMany({ where: { swiperId: viewerId }, select: { swipedId: true } }),
+      prisma.block.findMany({
+        where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
+        select: { blockerId: true, blockedId: true },
+      }),
+    ]);
+
+    const swipedIds = new Set(swipes.map((s) => s.swipedId));
+    const blockedIds = new Set(
+      blocks.flatMap((b) => (b.blockerId === viewerId ? [b.blockedId] : [b.blockerId])),
+    );
+    const excludeIds = [...swipedIds, ...blockedIds, viewerId];
+
+    const candidates = await prismaRead.user.findMany({
+      where: {
+        id: { notIn: excludeIds },
+        onboardingCompleted: true,
+        isActive: true,
+        isBanned: false,
+        status: "active",
+        onboardingProfile: { isNot: null },
+        profile: { isNot: null },
+        location: { isNot: null },
+      },
+      include: {
+        onboardingProfile: true,
+        hobbies: true,
+        onboardingPhotos: {
+          orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }],
+          take: 1,
+        },
+        location: true,
+        profile: true,
+      },
+      take: 200,
+    });
+
+    const users: Array<Record<string, unknown>> = [];
+
+    for (const candidate of candidates) {
+      if (!candidate.profile || !candidate.location) continue;
+
+      let candidateLat = effectiveLatitude(candidate.location);
+      let candidateLng = effectiveLongitude(candidate.location);
+
+      // If user has city but no coordinates, try to geocode and backfill
+      if ((candidateLat === null || candidateLng === null) && candidate.location.city) {
+        const { geocodeCity } = await import("../services/geocoding.service");
+        const geocoded = await geocodeCity(
+          candidate.location.city,
+          candidate.location.country ?? "",
+        );
+        if (geocoded) {
+          candidateLat = geocoded.latitude;
+          candidateLng = geocoded.longitude;
+          // Backfill the coordinates in DB (fire-and-forget)
+          prisma.userLocation.update({
+            where: { userId: candidate.id },
+            data: { latitude: geocoded.latitude, longitude: geocoded.longitude },
+          }).catch(() => {});
+        }
+      }
+
+      if (candidateLat === null || candidateLng === null) continue;
+
+      const distanceKm = haversineKm(viewerLat, viewerLng, candidateLat, candidateLng);
+      if (distanceKm > NEARBY_RADIUS_KM) continue;
+
+      const age = calculateAge(candidate.profile.dateOfBirth);
+      if (age < preferences.minAge || age > preferences.maxAge) continue;
+
+      // Fuzzy the coordinates slightly for privacy (~200m random offset)
+      const fuzzLat = candidateLat + (Math.random() - 0.5) * 0.004;
+      const fuzzLng = candidateLng + (Math.random() - 0.5) * 0.004;
+
+      const hobbies = candidate.hobbies.map((h) => h.hobby);
+
+      users.push({
+        id: candidate.id.toString(),
+        displayName:
+          candidate.onboardingProfile?.displayName ||
+          [candidate.firstName, candidate.lastName].filter(Boolean).join(" ") ||
+          "Yaaro member",
+        age,
+        latitude: fuzzLat,
+        longitude: fuzzLng,
+        photoUrl: candidate.onboardingPhotos[0]?.url ?? null,
+        isVerified: candidate.profile.isVerified,
+        distanceKm: Math.round(distanceKm * 10) / 10,
+        bio: candidate.onboardingProfile?.bio ?? null,
+        interests: hobbies.slice(0, 5),
+        city: candidate.location.city ?? null,
+        country: candidate.location.country ?? null,
+      });
+    }
+
+    res.json({ success: true, users });
+  } catch (error) {
+    next(error);
+  }
+});
+
 discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) => {
   try {
     const viewerId = currentUserId(req);
+
+    // Check discovery cache – short TTL since swipes change frequently
+    const cacheKey = `discovery:${viewerId}`;
+    const cached = await cacheGet<{ cards: DiscoveryCard[] }>(cacheKey);
+    if (cached) {
+      const limits = await getLimits(viewerId);
+      return res.json({ success: true, cards: cached.cards, limits });
+    }
+
     const viewer = await prisma.user.findUnique({
       where: { id: viewerId },
       include: {
@@ -278,18 +427,33 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
       create: { userId: viewerId },
     });
 
-    const swipes = await prisma.swipe.findMany({ where: { swiperId: viewerId }, select: { swipedId: true } });
-    const receivedLikes = await prisma.swipe.findMany({
-      where: { swipedId: viewerId, action: { in: ["like", "superlike"] } },
-      select: { swiperId: true },
-    });
-    const blocks = await prisma.block.findMany({
-      where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
-      select: { blockerId: true, blockedId: true },
-    });
-    const candidates = await prisma.user.findMany({
+    // Parallel fetch of exclusion sets – only select IDs (lightweight)
+    const [swipes, receivedLikes, blocks] = await Promise.all([
+      prisma.swipe.findMany({ where: { swiperId: viewerId }, select: { swipedId: true } }),
+      prisma.swipe.findMany({
+        where: { swipedId: viewerId, action: { in: ["like", "superlike"] } },
+        select: { swiperId: true },
+      }),
+      prisma.block.findMany({
+        where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
+        select: { blockerId: true, blockedId: true },
+      }),
+    ]);
+
+    const swipedIds = new Set(swipes.map((swipe) => swipe.swipedId));
+    const blockedIds = new Set(
+      blocks.flatMap((block) =>
+        block.blockerId === viewerId ? [block.blockedId] : [block.blockerId],
+      ),
+    );
+    // Combine exclusion IDs for the database query
+    const excludeIds = [...swipedIds, ...blockedIds, viewerId];
+
+    // Optimized query: push filters to DB, limit candidate pool
+    // Uses read replica for this heavy query — writes still go to primary
+    const candidates = await prismaRead.user.findMany({
       where: {
-        id: { not: viewerId },
+        id: { notIn: excludeIds },
         onboardingCompleted: true,
         isActive: true,
         isBanned: false,
@@ -302,6 +466,7 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
         hobbies: true,
         onboardingPhotos: {
           orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }],
+          take: 6, // Limit photos loaded per candidate
         },
         location: true,
         profile: true,
@@ -311,16 +476,12 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
           select: { id: true, endsAt: true },
         },
       },
+      // Fetch more than needed to allow filtering, but cap the DB result set
+      take: 200,
     });
     const limits = await getLimits(viewerId);
 
-    const swipedIds = new Set(swipes.map((swipe) => swipe.swipedId.toString()));
     const receivedLikeIds = new Set(receivedLikes.map((swipe) => swipe.swiperId.toString()));
-    const blockedIds = new Set(
-      blocks.map((block) =>
-        block.blockerId === viewerId ? block.blockedId.toString() : block.blockerId.toString(),
-      ),
-    );
     const viewerLatitude = effectiveLatitude(viewer.location);
     const viewerLongitude = effectiveLongitude(viewer.location);
     const viewerHobbies = viewer.hobbies.map((item) => item.hobby);
@@ -330,7 +491,7 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
 
     const cards: DiscoveryCard[] = candidates
       .flatMap<DiscoveryCard>((candidate) => {
-        if (!candidate.profile || swipedIds.has(candidate.id.toString()) || blockedIds.has(candidate.id.toString())) {
+        if (!candidate.profile) {
           return [];
         }
 
@@ -425,11 +586,15 @@ discoveryRouter.get("/discover", async (req: AuthenticatedRequest, res, next) =>
 
     const boostedUserIds = cards.filter((card) => card.isBoosted).map((card) => BigInt(card.id));
     if (boostedUserIds.length > 0) {
-      await prisma.boost.updateMany({
+      // Fire-and-forget boost tracking for lower latency
+      prisma.boost.updateMany({
         where: { userId: { in: boostedUserIds }, startedAt: { lte: new Date() }, endsAt: { gt: new Date() } },
         data: { viewsGained: { increment: 1 } },
-      });
+      }).catch(() => {});
     }
+
+    // Cache the discovery result
+    await cacheSet(cacheKey, { cards }, CacheTTL.DISCOVERY_CARDS);
 
     res.json({ success: true, cards, limits });
   } catch (error) {
@@ -581,6 +746,12 @@ discoveryRouter.post("/swipe", async (req: AuthenticatedRequest, res, next) => {
       });
     }
 
+    // Invalidate caches affected by the swipe
+    await cacheDel(`discovery:${swiperId}`, `likes:${targetUserId}`);
+    if (isMutual) {
+      await cacheDel(`matches:${swiperId}`, `matches:${targetUserId}`);
+    }
+
     res.status(201).json({
       success: true,
       matched: isMutual,
@@ -624,6 +795,14 @@ discoveryRouter.post("/swipe/undo", async (req: AuthenticatedRequest, res, next)
         data: { isActive: false },
       }),
     ]);
+
+    // Invalidate caches for both users
+    await cacheDel(
+      `discovery:${swiperId}`,
+      `matches:${swiperId}`,
+      `matches:${lastSwipe.swipedId}`,
+      `likes:${lastSwipe.swipedId}`,
+    );
 
     res.json({ success: true, undoneUserId: lastSwipe.swipedId.toString(), limits: await getLimits(swiperId) });
   } catch (error) {

@@ -4,7 +4,10 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 8000),
   databaseUrl: process.env.DATABASE_URL ?? "",
-  databasePoolMax: Number(process.env.DATABASE_POOL_MAX ?? 1),
+  // Connection pool per instance — kept small because PgBouncer handles multiplexing
+  databasePoolMax: Number(process.env.DATABASE_POOL_MAX ?? 5),
+  // Optional: separate read replica URL for read-heavy queries (discovery, profiles)
+  databaseReadUrl: process.env.DATABASE_READ_URL ?? "",
   jwtSecret: process.env.JWT_SECRET ?? "",
   adminJwtSecret: process.env.ADMIN_JWT_SECRET ?? process.env.JWT_SECRET ?? "",
   publicWebUrl: process.env.PUBLIC_WEB_URL ?? "http://localhost:3000",
@@ -20,6 +23,8 @@ export const env = {
   smtpPassword: process.env.SMTP_PASSWORD ?? "",
   mailFrom: process.env.MAIL_FROM ?? process.env.SMTP_USER ?? "",
   moderationAdminEmail: process.env.MODERATION_ADMIN_EMAIL ?? process.env.MAIL_FROM ?? process.env.SMTP_USER ?? "",
+  // Active Stripe keys
+  stripeMode: process.env.STRIPE_MODE ?? "sandbox",
   stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",

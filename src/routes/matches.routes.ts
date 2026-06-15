@@ -4,10 +4,18 @@ import { prisma } from "../config/database";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { hasTier, getUserTier } from "../services/premium.service";
 import { interestBadges } from "../services/interest-badges.service";
+import {
+  cacheGet,
+  cacheSet,
+  cacheDel,
+  CacheTTL,
+} from "../services/cache.service";
 
 export const matchesRouter = Router();
 
 matchesRouter.use(requireAuth);
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function currentUserId(req: AuthenticatedRequest) {
   if (!req.auth?.userId) {
@@ -78,6 +86,16 @@ function displayName(user: {
   );
 }
 
+// ─── Lightweight match card (used in list view) ─────────────────────────────
+
+const MATCH_PHOTO_ORDER = [
+  { isPrimary: "desc" as const },
+  { orderIndex: "asc" as const },
+  { id: "asc" as const },
+];
+
+// ─── Full profile builder (loaded on-demand when user taps a profile) ───────
+
 async function publicProfile(user: {
   id: bigint;
   firstName: string | null;
@@ -98,7 +116,7 @@ async function publicProfile(user: {
   return {
     id: user.id.toString(),
     displayName: displayName(user),
-    age: user.profile ? calculateAge(user.profile.dateOfBirth) : null,
+    age: user.profile?.dateOfBirth ? calculateAge(user.profile.dateOfBirth) : null,
     gender: user.profile?.gender ?? null,
     lastActiveAt: user.lastActiveAt?.toISOString() ?? null,
     isVerified: user.profile?.isVerified ?? false,
@@ -212,9 +230,20 @@ async function hasPlan(userId: bigint, slugs: string[]) {
   return slugs.some((slug) => hasTier(tier, slug as "free" | "plus" | "gold" | "platinum"));
 }
 
+// ─── GET /matches – Lightweight list with caching ───────────────────────────
+
 matchesRouter.get("/matches", async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = currentUserId(req);
+    const cacheKey = `matches:${userId}`;
+
+    // Check cache first
+    const cached = await cacheGet<unknown[]>(cacheKey);
+    if (cached) {
+      return res.json({ success: true, matches: cached });
+    }
+
+    // Lightweight query: include only relationships needed for the match list card
     const matches = await prisma.match.findMany({
       where: {
         isActive: true,
@@ -225,14 +254,20 @@ matchesRouter.get("/matches", async (req: AuthenticatedRequest, res, next) => {
         user1: {
           include: {
             onboardingProfile: true,
-            onboardingPhotos: { orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }] },
+            onboardingPhotos: {
+              orderBy: MATCH_PHOTO_ORDER,
+              take: 1,
+            },
             profile: true,
           },
         },
         user2: {
           include: {
             onboardingProfile: true,
-            onboardingPhotos: { orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }] },
+            onboardingPhotos: {
+              orderBy: MATCH_PHOTO_ORDER,
+              take: 1,
+            },
             profile: true,
           },
         },
@@ -244,19 +279,25 @@ matchesRouter.get("/matches", async (req: AuthenticatedRequest, res, next) => {
       },
     });
 
-    const items = matches.map((match) => {
+    const itemsByUser = new Map<string, unknown>();
+
+    for (const match of matches) {
       const matchedUser = match.user1Id === userId ? match.user2 : match.user1;
+      const userIdStr = matchedUser.id.toString();
+
+      if (itemsByUser.has(userIdStr)) continue;
+
       const conversation = match.conversations[0] ?? null;
 
-      return {
+      itemsByUser.set(userIdStr, {
         id: match.id.toString(),
         matchedAt: match.matchedAt.toISOString(),
         isNew: Date.now() - match.matchedAt.getTime() < 24 * 60 * 60 * 1000,
         compatibilityScore: Number(match.compatibilityScore),
         user: {
-          id: matchedUser.id.toString(),
+          id: userIdStr,
           displayName: displayName(matchedUser),
-          age: matchedUser.profile ? calculateAge(matchedUser.profile.dateOfBirth) : null,
+          age: matchedUser.profile?.dateOfBirth ? calculateAge(matchedUser.profile.dateOfBirth) : null,
           mainPhotoUrl: matchedUser.onboardingPhotos[0]?.url ?? null,
           lastActiveAt: matchedUser.lastActiveAt?.toISOString() ?? null,
           isVerified: matchedUser.profile?.isVerified ?? false,
@@ -271,21 +312,21 @@ matchesRouter.get("/matches", async (req: AuthenticatedRequest, res, next) => {
           conversation && conversation.user1Id === userId
             ? conversation.user1UnreadCount
             : conversation?.user2UnreadCount ?? 0,
-      };
-    });
-    const itemsByUser = new Map<string, (typeof items)[number]>();
-
-    for (const item of items) {
-      if (!itemsByUser.has(item.user.id)) {
-        itemsByUser.set(item.user.id, item);
-      }
+      });
     }
 
-    res.json({ success: true, matches: Array.from(itemsByUser.values()) });
+    const result = Array.from(itemsByUser.values());
+
+    // Cache the lightweight result
+    await cacheSet(cacheKey, result, CacheTTL.MATCHES_LIST);
+
+    res.json({ success: true, matches: result });
   } catch (error) {
     next(error);
   }
 });
+
+// ─── DELETE /matches/:matchId ───────────────────────────────────────────────
 
 matchesRouter.delete("/matches/:matchId", async (req: AuthenticatedRequest, res, next) => {
   try {
@@ -298,7 +339,7 @@ matchesRouter.delete("/matches/:matchId", async (req: AuthenticatedRequest, res,
         isActive: true,
         OR: [{ user1Id: userId }, { user2Id: userId }],
       },
-      select: { id: true },
+      select: { id: true, user1Id: true, user2Id: true },
     });
 
     if (!match) {
@@ -310,16 +351,35 @@ matchesRouter.delete("/matches/:matchId", async (req: AuthenticatedRequest, res,
       prisma.conversation.updateMany({ where: { matchId }, data: { isActive: false } }),
     ]);
 
+    // Invalidate both users' match caches
+    const otherUserId = match.user1Id === userId ? match.user2Id : match.user1Id;
+    await cacheDel(`matches:${userId}`, `matches:${otherUserId}`);
+
     res.json({ success: true });
   } catch (error) {
     next(error);
   }
 });
 
+// ─── GET /users/:userId/profile – Full profile (loaded on interaction) ──────
+
 matchesRouter.get("/users/:userId/profile", async (req: AuthenticatedRequest, res, next) => {
   try {
     const viewerId = currentUserId(req);
     const targetUserId = BigInt(req.params.userId);
+
+    // Check cache for this profile
+    const cacheKey = `profile:${targetUserId}:viewer:${viewerId}`;
+    const cached = await cacheGet<object>(cacheKey);
+    if (cached) {
+      // Still record the view asynchronously
+      if (viewerId !== targetUserId) {
+        prisma.profileView.create({
+          data: { viewerId, viewedId: targetUserId, source: "profile" },
+        }).catch(() => {});
+      }
+      return res.json({ success: true, profile: cached });
+    }
 
     const blocked = await prisma.block.findFirst({
       where: {
@@ -363,11 +423,14 @@ matchesRouter.get("/users/:userId/profile", async (req: AuthenticatedRequest, re
     }
 
     const targetProfile = await publicProfile(target);
+
+    // Record profile view (fire-and-forget for latency)
     if (viewerId !== targetUserId) {
-      await prisma.profileView.create({
+      prisma.profileView.create({
         data: { viewerId, viewedId: targetUserId, source: "profile" },
-      });
+      }).catch(() => {});
     }
+
     const { score, sharedHobbies } = compatibilityScore(
       { profile: viewer.onboardingProfile, hobbies: viewer.hobbies.map((item) => item.hobby) },
       {
@@ -389,19 +452,23 @@ matchesRouter.get("/users/:userId/profile", async (req: AuthenticatedRequest, re
         ? Math.round(haversineKm(viewerLatitude, viewerLongitude, targetLatitude, targetLongitude))
         : null;
 
-    res.json({
-      success: true,
-      profile: {
-        ...targetProfile,
-        distanceKm,
-        compatibilityScore: score,
-        sharedInterests: sharedHobbies,
-      },
-    });
+    const profileResult = {
+      ...targetProfile,
+      distanceKm,
+      compatibilityScore: score,
+      sharedInterests: sharedHobbies,
+    };
+
+    // Cache the full profile result
+    await cacheSet(cacheKey, profileResult, CacheTTL.USER_PROFILE);
+
+    res.json({ success: true, profile: profileResult });
   } catch (error) {
     next(error);
   }
 });
+
+// ─── GET /likes/received – With caching ─────────────────────────────────────
 
 matchesRouter.get("/likes/received", async (req: AuthenticatedRequest, res, next) => {
   try {
@@ -430,22 +497,44 @@ matchesRouter.get("/likes/received", async (req: AuthenticatedRequest, res, next
       return res.json({ success: true, count, blurred: true, likes: [] });
     }
 
+    // Check cache
+    const cacheKey = `likes:${userId}`;
+    const cached = await cacheGet<object>(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    // Lightweight select: only fields needed for the likes list card
     const likes = await prisma.swipe.findMany({
       where: unmatchedLikeWhere,
       orderBy: { createdAt: "desc" },
-      include: {
-        superLike: true,
+      select: {
+        id: true,
+        action: true,
+        createdAt: true,
+        superLike: { select: { message: true } },
         swiper: {
-          include: {
-            onboardingProfile: true,
-            onboardingPhotos: { orderBy: [{ isPrimary: "desc" }, { orderIndex: "asc" }, { id: "asc" }] },
-            profile: true,
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            onboardingProfile: { select: { displayName: true } },
+            onboardingPhotos: {
+              select: { url: true },
+              orderBy: [
+                { isPrimary: "desc" as const },
+                { orderIndex: "asc" as const },
+                { id: "asc" as const },
+              ],
+              take: 1,
+            },
+            profile: { select: { dateOfBirth: true, isVerified: true } },
           },
         },
       },
     });
 
-    res.json({
+    const result = {
       success: true,
       count: likes.length,
       blurred: false,
@@ -457,12 +546,16 @@ matchesRouter.get("/likes/received", async (req: AuthenticatedRequest, res, next
         user: {
           id: like.swiper.id.toString(),
           displayName: displayName(like.swiper),
-          age: like.swiper.profile ? calculateAge(like.swiper.profile.dateOfBirth) : null,
+          age: like.swiper.profile?.dateOfBirth ? calculateAge(like.swiper.profile.dateOfBirth) : null,
           mainPhotoUrl: like.swiper.onboardingPhotos[0]?.url ?? null,
           isVerified: like.swiper.profile?.isVerified ?? false,
         },
       })),
-    });
+    };
+
+    await cacheSet(cacheKey, result, CacheTTL.LIKES_RECEIVED);
+
+    res.json(result);
   } catch (error) {
     next(error);
   }

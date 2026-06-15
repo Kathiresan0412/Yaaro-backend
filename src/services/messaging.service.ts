@@ -168,6 +168,35 @@ export async function getConversationForMatch(userId: bigint, matchId: bigint) {
   });
 }
 
+export async function getConversationByIdOrMatchId(userId: bigint, id: bigint) {
+  // 1. Try finding conversation by conversationId directly
+  const conversation = await prisma.conversation.findFirst({
+    where: {
+      id,
+      isActive: true,
+      OR: [{ user1Id: userId }, { user2Id: userId }],
+    },
+    select: { id: true, matchId: true, user1Id: true, user2Id: true },
+  });
+
+  if (conversation) {
+    const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+    const blocked = await prisma.block.findFirst({
+      where: {
+        OR: [
+          { blockerId: userId, blockedId: otherUserId },
+          { blockerId: otherUserId, blockedId: userId },
+        ],
+      },
+      select: { id: true },
+    });
+    return blocked ? null : conversation;
+  }
+
+  // 2. Fallback to matchId if not found by conversationId
+  return getConversationForMatch(userId, id);
+}
+
 function previewFor(type: MessageType, content: string | null) {
   if (type === "photo" || type === "image") {
     return "Photo";
@@ -192,7 +221,7 @@ export async function createMessage(params: {
   mediaUrl?: string | null;
   durationSeconds?: number | null;
 }) {
-  const conversation = await getConversationForMatch(params.userId, params.matchId);
+  const conversation = await getConversationByIdOrMatchId(params.userId, params.matchId);
 
   if (!conversation) {
     return null;

@@ -1,3 +1,4 @@
+import { geocodeCity } from "../services/geocoding.service";
 import { Router, type NextFunction, type Response } from "express";
 import type { Gender, UserProfile } from "@prisma/client";
 import { prisma } from "../config/database";
@@ -6,6 +7,7 @@ import { isSupportedImageUploadSource, uploadProfilePhoto } from "../services/me
 import { assertSafeText } from "../services/content-safety.service";
 import { requireTier } from "../services/premium.service";
 import { interestBadges } from "../services/interest-badges.service";
+import { invalidateUserCache } from "../services/cache.service";
 
 export const profileRouter = Router();
 
@@ -266,7 +268,7 @@ function profileCompleteness(input: {
 }
 
 async function getProfilePayload(currentUserId: bigint) {
-  const [user, profile, hobbies, photos, location, preferences] = await Promise.all([
+  const [user, profile, hobbies, photos, location] = await Promise.all([
     prisma.user.findUnique({
       where: { id: currentUserId },
       select: {
@@ -293,12 +295,21 @@ async function getProfilePayload(currentUserId: bigint) {
       orderBy: [{ orderIndex: "asc" }, { id: "asc" }],
     }),
     prisma.userLocation.findUnique({ where: { userId: currentUserId } }),
-    prisma.userPreference.upsert({
+  ]);
+
+  // Upsert preferences separately to avoid failing the entire payload on write error
+  let preferences;
+  try {
+    preferences = await prisma.userPreference.upsert({
       where: { userId: currentUserId },
       update: {},
       create: { userId: currentUserId },
-    }),
-  ]);
+    });
+  } catch (e) {
+    console.error("[Profile /me] Failed to upsert preferences:", e);
+    // Fall back to reading existing or use defaults
+    preferences = await prisma.userPreference.findUnique({ where: { userId: currentUserId } });
+  }
 
   return {
     user: user && {
@@ -334,16 +345,16 @@ async function getProfilePayload(currentUserId: bigint) {
         updatedAt: location.updatedAt.toISOString(),
       } as const),
     preferences: {
-      showGender: preferences.showGender,
-      minAge: preferences.minAge,
-      maxAge: preferences.maxAge,
-      maxDistanceKm: preferences.maxDistanceKm,
-      globalMode: preferences.globalMode,
-      showVerifiedOnly: preferences.showVerifiedOnly,
-      showPhotosOnly: preferences.showPhotosOnly,
-      incognitoMode: preferences.incognitoMode,
+      showGender: preferences?.showGender ?? "everyone",
+      minAge: preferences?.minAge ?? 18,
+      maxAge: preferences?.maxAge ?? 45,
+      maxDistanceKm: preferences?.maxDistanceKm ?? 150,
+      globalMode: preferences?.globalMode ?? false,
+      showVerifiedOnly: preferences?.showVerifiedOnly ?? false,
+      showPhotosOnly: preferences?.showPhotosOnly ?? true,
+      incognitoMode: preferences?.incognitoMode ?? false,
     },
-    badges: await interestBadges(hobbies.map((item) => item.hobby)),
+    badges: await interestBadges(hobbies.map((item) => item.hobby)).catch(() => hobbies.map((item) => item.hobby).slice(0, 12)),
     completeness: profileCompleteness({
       profile,
       hobbies: hobbies.map((item) => item.hobby),
@@ -355,8 +366,10 @@ async function getProfilePayload(currentUserId: bigint) {
 
 profileRouter.get("/me", async (req: AuthenticatedRequest, res, next) => {
   try {
-    res.json({ success: true, ...(await getProfilePayload(userId(req))) });
+    const payload = await getProfilePayload(userId(req));
+    res.json({ success: true, ...payload });
   } catch (error) {
+    console.error("[Profile /me] Error:", error);
     next(error);
   }
 });
@@ -587,6 +600,9 @@ profileRouter.put("/me", async (req: AuthenticatedRequest, res, next) => {
       }
     });
 
+    // Invalidate cache so other users see updated info in discovery/matches
+    await invalidateUserCache(currentUserId);
+
     res.json({ success: true, ...(await getProfilePayload(currentUserId)) });
   } catch (error) {
     next(error);
@@ -741,7 +757,7 @@ profileRouter.put("/preferences", async (req: AuthenticatedRequest, res, next) =
     const currentUserId = userId(req);
     const minAge = cleanInteger(req.body.minAge, 18, 100) ?? 18;
     const maxAge = cleanInteger(req.body.maxAge, minAge, 100) ?? Math.max(45, minAge);
-    const maxDistanceKm = cleanInteger(req.body.maxDistanceKm, 1, 20000) ?? 50;
+    const maxDistanceKm = cleanInteger(req.body.maxDistanceKm, 1, 20000) ?? 150;
     const showGender = cleanString(req.body.showGender, 40) || "everyone";
 
     const preferences = await prisma.userPreference.upsert({
@@ -767,6 +783,9 @@ profileRouter.put("/preferences", async (req: AuthenticatedRequest, res, next) =
       },
     });
 
+    // Preferences change the discovery results – invalidate discovery cache
+    await invalidateUserCache(currentUserId);
+
     res.json({
       success: true,
       preferences: {
@@ -787,8 +806,8 @@ profileRouter.put("/preferences", async (req: AuthenticatedRequest, res, next) =
 profileRouter.put("/location", async (req: AuthenticatedRequest, res, next) => {
   try {
     const currentUserId = userId(req);
-    const latitude = req.body.latitude === null || req.body.latitude === undefined ? null : Number(req.body.latitude);
-    const longitude = req.body.longitude === null || req.body.longitude === undefined ? null : Number(req.body.longitude);
+    let latitude = req.body.latitude === null || req.body.latitude === undefined ? null : Number(req.body.latitude);
+    let longitude = req.body.longitude === null || req.body.longitude === undefined ? null : Number(req.body.longitude);
     const city = cleanString(req.body.city, 120);
     const country = cleanString(req.body.country, 120);
 
@@ -796,11 +815,23 @@ profileRouter.put("/location", async (req: AuthenticatedRequest, res, next) => {
       return res.status(400).json({ success: false, message: "Share your location or enter a city." });
     }
 
+    // Auto-geocode: if city is provided but coordinates are missing, resolve via Nominatim
+    if (city && (!Number.isFinite(latitude) || !Number.isFinite(longitude))) {
+      const geocoded = await geocodeCity(city, country ?? "");
+      if (geocoded) {
+        latitude = geocoded.latitude;
+        longitude = geocoded.longitude;
+      }
+    }
+
     const location = await prisma.userLocation.upsert({
       where: { userId: currentUserId },
       update: { latitude, longitude, city, country },
       create: { userId: currentUserId, latitude, longitude, city, country },
     });
+
+    // Location changes affect distance-based discovery for all users
+    await invalidateUserCache(currentUserId);
 
     res.json({
       success: true,
@@ -886,6 +917,16 @@ export async function completeOnboarding(
           country: "United States",
         },
       });
+    } else if (location.city && (location.latitude === null || location.longitude === null)) {
+      // User has city/country from onboarding but no coordinates — geocode them
+      const { geocodeCity } = await import("../services/geocoding.service");
+      const geocoded = await geocodeCity(location.city, location.country ?? "");
+      if (geocoded) {
+        location = await prisma.userLocation.update({
+          where: { userId: currentUserId },
+          data: { latitude: geocoded.latitude, longitude: geocoded.longitude },
+        });
+      }
     }
 
     const user = await prisma.user.update({

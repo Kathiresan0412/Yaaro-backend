@@ -7,6 +7,7 @@ import { verifyAccessToken } from "./utils/token";
 import {
   createMessage,
   findAccessibleMessage,
+  getConversationByIdOrMatchId,
   getConversationForMatch,
   markConversationRead,
   serializeMessage,
@@ -81,20 +82,40 @@ function emitMessageToUser(
 
 function scheduleUnreadMessageEmail(input: { userId: bigint; messageId: bigint; matchId: bigint; senderId: bigint }) {
   setTimeout(async () => {
-    const message = await prisma.message.findFirst({
-      where: { id: input.messageId, isRead: false },
-      select: { id: true },
-    });
+    try {
+      const message = await prisma.message.findFirst({
+        where: { id: input.messageId, isRead: false },
+        select: { id: true },
+      });
 
-    if (!message) {
-      return;
+      if (!message) {
+        return;
+      }
+
+      await sendEmail(input.userId, "new_message", {
+        matchId: input.matchId.toString(),
+        senderId: input.senderId.toString(),
+      });
+    } catch (error) {
+      console.error("Error sending scheduled unread message email (socket):", error);
     }
-
-    await sendEmail(input.userId, "new_message", {
-      matchId: input.matchId.toString(),
-      senderId: input.senderId.toString(),
-    });
   }, 5 * 60 * 1000).unref();
+}
+
+function safeAsyncHandler(handler: (...args: any[]) => Promise<void>) {
+  return async (...args: any[]) => {
+    try {
+      await handler(...args);
+    } catch (error) {
+      console.error("Socket handler error:", error);
+      const ack = args[args.length - 1];
+      if (typeof ack === "function") {
+        try {
+          ack({ success: false, message: "Internal server error." });
+        } catch {}
+      }
+    }
+  };
 }
 
 export function attachSocketServer(httpServer: HttpServer) {
@@ -144,7 +165,7 @@ export function attachSocketServer(httpServer: HttpServer) {
     await prisma.user.update({ where: { id: userId }, data: { lastActiveAt: new Date() } }).catch(() => undefined);
     io.emit("presence_update", { userId: userKey, isOnline: true });
 
-    socket.on("join_match", async (payload: { matchId?: string }, ack?: Ack) => {
+    socket.on("join_match", safeAsyncHandler(async (payload: { matchId?: string }, ack?: Ack) => {
       const matchId = parseBigInt(payload?.matchId);
 
       if (!matchId) {
@@ -152,36 +173,49 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      const conversation = await getConversationForMatch(userId, matchId);
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
 
       if (!conversation) {
         ack?.({ success: false, message: "Match not found." });
         return;
       }
 
-      socket.join(roomForMatch(matchId));
-      addActiveMatchRoom(userId, matchId);
+      // Always join the room keyed by the actual matchId from the conversation
+      const realMatchId = conversation.matchId;
+      socket.join(roomForMatch(realMatchId));
+      addActiveMatchRoom(userId, realMatchId);
       const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+
+      // Fetch last active time for the other user
+      const otherUser = await prisma.user.findUnique({
+        where: { id: otherUserId },
+        select: { lastActiveAt: true },
+      });
+
       ack?.({
         success: true,
-        matchId: matchId.toString(),
+        matchId: realMatchId.toString(),
         otherUserId: otherUserId.toString(),
         isOnline: onlineUsers.has(otherUserId.toString()),
+        lastActiveAt: otherUser?.lastActiveAt?.toISOString() ?? null,
       });
-    });
+    }));
 
-    socket.on("leave_match", (payload: { matchId?: string }) => {
+    socket.on("leave_match", safeAsyncHandler(async (payload: { matchId?: string }) => {
       const matchId = parseBigInt(payload?.matchId);
 
       if (matchId) {
-        socket.leave(roomForMatch(matchId));
-        removeActiveMatchRoom(userId, matchId);
+        // Resolve to actual matchId in case a conversationId was passed
+        const conversation = await getConversationByIdOrMatchId(userId, matchId);
+        const realMatchId = conversation?.matchId ?? matchId;
+        socket.leave(roomForMatch(realMatchId));
+        removeActiveMatchRoom(userId, realMatchId);
       }
-    });
+    }));
 
     socket.on(
       "send_message",
-      async (
+      safeAsyncHandler(async (
         payload: {
           matchId?: string;
           content?: string;
@@ -270,10 +304,10 @@ export function attachSocketServer(httpServer: HttpServer) {
         });
 
         ack?.({ success: true, message: serializedForSender });
-      },
+      })
     );
 
-    socket.on("typing_start", async (payload: { matchId?: string }, ack?: Ack) => {
+    socket.on("typing_start", safeAsyncHandler(async (payload: { matchId?: string }, ack?: Ack) => {
       const matchId = parseBigInt(payload?.matchId);
 
       if (!matchId) {
@@ -281,21 +315,21 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      const conversation = await getConversationForMatch(userId, matchId);
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
 
       if (!conversation) {
         ack?.({ success: false, message: "Match not found." });
         return;
       }
 
-      socket.to(roomForMatch(matchId)).emit("typing_start", {
-        matchId: matchId.toString(),
+      socket.to(roomForMatch(conversation.matchId)).emit("typing_start", {
+        matchId: conversation.matchId.toString(),
         userId: userKey,
       });
       ack?.({ success: true });
-    });
+    }));
 
-    socket.on("typing_stop", async (payload: { matchId?: string }, ack?: Ack) => {
+    socket.on("typing_stop", safeAsyncHandler(async (payload: { matchId?: string }, ack?: Ack) => {
       const matchId = parseBigInt(payload?.matchId);
 
       if (!matchId) {
@@ -303,21 +337,21 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      const conversation = await getConversationForMatch(userId, matchId);
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
 
       if (!conversation) {
         ack?.({ success: false, message: "Match not found." });
         return;
       }
 
-      socket.to(roomForMatch(matchId)).emit("typing_stop", {
-        matchId: matchId.toString(),
+      socket.to(roomForMatch(conversation.matchId)).emit("typing_stop", {
+        matchId: conversation.matchId.toString(),
         userId: userKey,
       });
       ack?.({ success: true });
-    });
+    }));
 
-    socket.on("mark_read", async (payload: { matchId?: string; messageId?: string }, ack?: Ack) => {
+    socket.on("mark_read", safeAsyncHandler(async (payload: { matchId?: string; messageId?: string }, ack?: Ack) => {
       const matchId = parseBigInt(payload?.matchId);
       const messageId = parseBigInt(payload?.messageId);
 
@@ -326,7 +360,7 @@ export function attachSocketServer(httpServer: HttpServer) {
         return;
       }
 
-      const conversation = await getConversationForMatch(userId, matchId);
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
 
       if (!conversation) {
         ack?.({ success: false, message: "Match not found." });
@@ -334,16 +368,16 @@ export function attachSocketServer(httpServer: HttpServer) {
       }
 
       const readAt = await markConversationRead(conversation, userId, messageId ?? undefined);
-      io.to(roomForMatch(matchId)).emit("message_read", {
-        matchId: matchId.toString(),
+      io.to(roomForMatch(conversation.matchId)).emit("message_read", {
+        matchId: conversation.matchId.toString(),
         messageId: messageId?.toString() ?? null,
         readerId: userKey,
         readAt: readAt.toISOString(),
       });
       ack?.({ success: true, readAt: readAt.toISOString() });
-    });
+    }));
 
-    socket.on("react_message", async (payload: { messageId?: string; emoji?: string }, ack?: Ack) => {
+    socket.on("react_message", safeAsyncHandler(async (payload: { messageId?: string; emoji?: string }, ack?: Ack) => {
       const messageId = parseBigInt(payload?.messageId);
       const emoji = typeof payload?.emoji === "string" ? payload.emoji : "";
 
@@ -368,9 +402,9 @@ export function attachSocketServer(httpServer: HttpServer) {
       };
       io.to(roomForMatch(updated.conversation.matchId)).emit("message_reaction", eventPayload);
       ack?.({ success: true, ...eventPayload });
-    });
+    }));
 
-    socket.on("delete_message", async (payload: { messageId?: string }, ack?: Ack) => {
+    socket.on("delete_message", safeAsyncHandler(async (payload: { messageId?: string }, ack?: Ack) => {
       const messageId = parseBigInt(payload?.messageId);
 
       if (!messageId) {
@@ -393,7 +427,7 @@ export function attachSocketServer(httpServer: HttpServer) {
 
       socket.emit("message_deleted", serializeMessage(updated, userId));
       ack?.({ success: true, message: serializeMessage(updated, userId) });
-    });
+    }));
 
     socket.on("webrtc_signal", (payload: { to: string; type: string; sdp?: any; candidate?: any }) => {
       io.to(`user:${payload.to}`).emit("webrtc_signal", {
@@ -404,7 +438,112 @@ export function attachSocketServer(httpServer: HttpServer) {
       });
     });
 
-    socket.on("disconnect", async () => {
+    // ---- Call signaling ----
+
+    socket.on("call_invite", safeAsyncHandler(async (payload: { matchId?: string; isVideo?: boolean; callerName?: string; callerPhoto?: string }, ack?: Ack) => {
+      const matchId = parseBigInt(payload?.matchId);
+
+      if (!matchId) {
+        ack?.({ success: false, message: "Match id is invalid." });
+        return;
+      }
+
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
+
+      if (!conversation) {
+        ack?.({ success: false, message: "Match not found." });
+        return;
+      }
+
+      const receiverId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+      const isVideo = payload?.isVideo === true;
+      const callerName = payload?.callerName ?? "Someone";
+      const callerPhoto = payload?.callerPhoto ?? "";
+      const callId = `yaaro_call_${matchId.toString()}`;
+
+      // Emit real-time call invitation to the other user via socket
+      io.to(`user:${receiverId.toString()}`).emit("incoming_call", {
+        callId,
+        matchId: matchId.toString(),
+        callerId: userKey,
+        callerName,
+        callerPhoto,
+        isVideo,
+      });
+
+      // Also send push notification so they get it even if app is in background
+      await notifyUser({
+        userId: receiverId,
+        type: "new_message",
+        title: isVideo ? "Incoming Video Call 📹" : "Incoming Voice Call 📞",
+        body: `${callerName} is calling you`,
+        data: {
+          type: "incoming_call",
+          callId,
+          matchId: matchId.toString(),
+          callerId: userKey,
+          callerName,
+          callerPhoto,
+          isVideo: isVideo.toString(),
+        },
+        push: true,
+      });
+
+      ack?.({ success: true, callId });
+    }));
+
+    socket.on("call_accept", safeAsyncHandler(async (payload: { matchId?: string; callId?: string }) => {
+      const matchId = parseBigInt(payload?.matchId);
+
+      if (!matchId) return;
+
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
+      if (!conversation) return;
+
+      const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+
+      io.to(`user:${otherUserId.toString()}`).emit("call_accepted", {
+        callId: payload?.callId ?? `yaaro_call_${matchId.toString()}`,
+        matchId: matchId.toString(),
+        acceptedBy: userKey,
+      });
+    }));
+
+    socket.on("call_reject", safeAsyncHandler(async (payload: { matchId?: string; callId?: string }) => {
+      const matchId = parseBigInt(payload?.matchId);
+
+      if (!matchId) return;
+
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
+      if (!conversation) return;
+
+      const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+
+      io.to(`user:${otherUserId.toString()}`).emit("call_rejected", {
+        callId: payload?.callId ?? `yaaro_call_${matchId.toString()}`,
+        matchId: matchId.toString(),
+        rejectedBy: userKey,
+      });
+    }));
+
+    socket.on("call_end", safeAsyncHandler(async (payload: { matchId?: string; callId?: string }) => {
+      const matchId = parseBigInt(payload?.matchId);
+
+      if (!matchId) return;
+
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
+      if (!conversation) return;
+
+      const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+
+      io.to(`user:${otherUserId.toString()}`).emit("call_ended", {
+        callId: payload?.callId ?? `yaaro_call_${matchId.toString()}`,
+        matchId: matchId.toString(),
+        endedBy: userKey,
+      });
+    }));
+
+    socket.on("disconnect", safeAsyncHandler(async () => {
       const count = Math.max((onlineUsers.get(userKey) ?? 1) - 1, 0);
 
       if (count > 0) {
@@ -416,7 +555,7 @@ export function attachSocketServer(httpServer: HttpServer) {
       clearActiveMatchRooms(userId);
       await prisma.user.update({ where: { id: userId }, data: { lastActiveAt: new Date() } }).catch(() => undefined);
       io.emit("presence_update", { userId: userKey, isOnline: false });
-    });
+    }));
   });
 
   return io;

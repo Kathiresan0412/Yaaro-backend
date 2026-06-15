@@ -23,7 +23,7 @@ export function createAccessToken(
   const tokenPayload: TokenPayload = {
     ...payload,
     iat: now,
-    exp: now + 60 * 15,
+    exp: now + 60 * 60 * 24 * 7,
   };
 
   const header = base64UrlEncode({ alg: "HS256", typ: "JWT" });

@@ -180,6 +180,7 @@ enum PremiumTier {
 
 model User {
   id                    BigInt    @id @default(autoincrement())
+  firebaseUid           String?   @unique @map("firebase_uid") @db.VarChar(128)
   phone                 String?   @unique @db.VarChar(20)
   phoneVerifiedAt       DateTime? @map("phone_verified_at") @db.Timestamp(0)
   email                 String?   @unique @db.VarChar(255)
@@ -257,11 +258,15 @@ model User {
   pushSubscriptions     PushSubscription[]
   analyticsEvents       AnalyticsEvent[]
 
+  @@index([firebaseUid])
   @@index([phone])
   @@index([email])
   @@index([status])
   @@index([role])
   @@index([isActive])
+  // Composite index for discovery candidate queries (most-filtered condition first)
+  @@index([isActive, isBanned, status, onboardingCompleted])
+  @@index([lastActiveAt])
   @@map("users")
 }
 
@@ -406,6 +411,7 @@ model UserLocation {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([latitude, longitude])
   @@map("user_locations")
 }
 
@@ -414,7 +420,7 @@ model UserPreference {
   showGender       String  @default("everyone") @map("show_gender") @db.VarChar(40)
   minAge           Int     @default(18) @map("min_age")
   maxAge           Int     @default(45) @map("max_age")
-  maxDistanceKm    Int     @default(50) @map("max_distance_km")
+  maxDistanceKm    Int     @default(150) @map("max_distance_km")
   globalMode       Boolean @default(false) @map("global_mode")
   showVerifiedOnly Boolean @default(false) @map("show_verified_only")
   showPhotosOnly   Boolean @default(true) @map("show_photos_only")
@@ -442,6 +448,7 @@ model Swipe {
   @@unique([swiperId, swipedId])
   @@index([swiperId])
   @@index([swipedId])
+  @@index([swipedId, action, createdAt])
   @@index([action])
   @@index([createdAt])
   @@map("swipes")
@@ -645,8 +652,10 @@ model Profile {
 
   @@index([userId])
   @@index([gender])
+  @@index([gender, dateOfBirth])
   @@index([country])
   @@index([caste])
+  @@index([isVerified])
   @@map("profiles")
 }
 
@@ -753,6 +762,9 @@ model Match {
   @@unique([user1Id, user2Id])
   @@index([user1Id])
   @@index([user2Id])
+  // Composite indexes for active match lookups ordered by matchedAt
+  @@index([user1Id, isActive, matchedAt])
+  @@index([user2Id, isActive, matchedAt])
   @@map("matches")
 }
 

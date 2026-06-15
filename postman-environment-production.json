@@ -1,0 +1,73 @@
+{
+  "id": "yaaro0-production-env",
+  "name": "Yaaro0 - Production",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "https://yaaro-backend-production-fb61.up.railway.app",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "userId",
+      "value": "77",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "matchId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "messageId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "photoId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "notificationId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "requestId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "reportId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "verificationToken",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

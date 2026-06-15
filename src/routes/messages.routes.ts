@@ -6,6 +6,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middl
 import {
   createMessage,
   findAccessibleMessage,
+  getConversationByIdOrMatchId,
   getConversationForMatch,
   markConversationRead,
   serializeMessage,
@@ -93,19 +94,23 @@ function displayName(user: {
 
 function scheduleUnreadMessageEmail(input: { userId: bigint; messageId: bigint; matchId: bigint; senderId: bigint }) {
   setTimeout(async () => {
-    const message = await prisma.message.findFirst({
-      where: { id: input.messageId, isRead: false },
-      select: { id: true },
-    });
+    try {
+      const message = await prisma.message.findFirst({
+        where: { id: input.messageId, isRead: false },
+        select: { id: true },
+      });
 
-    if (!message) {
-      return;
+      if (!message) {
+        return;
+      }
+
+      await sendEmail(input.userId, "new_message", {
+        matchId: input.matchId.toString(),
+        senderId: input.senderId.toString(),
+      });
+    } catch (error) {
+      console.error("Error sending scheduled unread message email:", error);
     }
-
-    await sendEmail(input.userId, "new_message", {
-      matchId: input.matchId.toString(),
-      senderId: input.senderId.toString(),
-    });
   }, 5 * 60 * 1000).unref();
 }
 
@@ -154,7 +159,7 @@ messagesRouter.get("/conversations", async (req: AuthenticatedRequest, res, next
 
       return [
         {
-          id: conversation.matchId.toString(),
+          id: conversation.id.toString(),
           conversationId: conversation.id.toString(),
           matchedAt: conversation.match.matchedAt.toISOString(),
           isNew: false,
@@ -163,16 +168,16 @@ messagesRouter.get("/conversations", async (req: AuthenticatedRequest, res, next
           user: {
             id: otherUser.id.toString(),
             displayName: displayName(otherUser),
-            age: otherUser.profile ? calculateAge(otherUser.profile.dateOfBirth) : null,
+            age: otherUser.profile?.dateOfBirth ? calculateAge(otherUser.profile.dateOfBirth) : null,
             mainPhotoUrl: otherUser.onboardingPhotos[0]?.url ?? null,
             lastActiveAt: otherUser.lastActiveAt?.toISOString() ?? null,
             isVerified: otherUser.profile?.isVerified ?? false,
           },
           lastMessage: conversation.lastMessagePreview
             ? {
-                preview: conversation.lastMessagePreview,
-                sentAt: conversation.lastMessageAt?.toISOString() ?? null,
-              }
+              preview: conversation.lastMessagePreview,
+              sentAt: conversation.lastMessageAt?.toISOString() ?? null,
+            }
             : null,
           unreadCount:
             conversation.user1Id === userId ? conversation.user1UnreadCount : conversation.user2UnreadCount,
@@ -191,15 +196,15 @@ messagesRouter.get("/messages/:matchId", async (req: AuthenticatedRequest, res, 
     const userId = currentUserId(req);
     const matchIdStr = req.params.matchId;
     if (!/^\d+$/.test(matchIdStr)) {
-      return res.status(400).json({ success: false, message: "Invalid match ID." });
+      return res.status(400).json({ success: false, message: "Invalid ID." });
     }
-    const matchId = BigInt(matchIdStr);
+    const id = BigInt(matchIdStr);
     const limit = parseLimit(req.query.limit);
     const cursor = typeof req.query.cursor === "string" && req.query.cursor ? BigInt(req.query.cursor) : null;
-    const conversation = await getConversationForMatch(userId, matchId);
+    const conversation = await getConversationByIdOrMatchId(userId, id);
 
     if (!conversation) {
-      return res.status(404).json({ success: false, message: "Match not found." });
+      return res.status(404).json({ success: false, message: "Conversation not found." });
     }
 
     const messages = await prisma.message.findMany({
@@ -233,7 +238,9 @@ messagesRouter.post("/messages/:matchId", async (req: AuthenticatedRequest, res,
   try {
     const userId = currentUserId(req);
     const matchIdStr = req.params.matchId;
+    console.log("xxxxxxx Backend POST /messages/:matchId - matchIdStr:", JSON.stringify(matchIdStr));
     if (!/^\d+$/.test(matchIdStr)) {
+      console.log("xxxxxxx Backend POST /messages/:matchId - Regex failed for:", JSON.stringify(matchIdStr));
       return res.status(400).json({ success: false, message: "Invalid match ID." });
     }
     const matchId = BigInt(matchIdStr);
@@ -315,6 +322,69 @@ messagesRouter.post("/messages/:matchId", async (req: AuthenticatedRequest, res,
     next(error);
   }
 });
+
+messagesRouter.post(
+  "/messages/:matchId/media",
+  upload.single("image"),
+  async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const userId = currentUserId(req);
+      const matchIdStr = req.params.matchId;
+      if (!/^\d+$/.test(matchIdStr)) {
+        return res.status(400).json({ success: false, message: "Invalid match ID." });
+      }
+      const matchId = BigInt(matchIdStr);
+      const type = parseMessageType(req.body.type || "photo") ?? "photo";
+      const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: "An image file is required." });
+      }
+
+      const source = dataUriFromFile(req.file);
+      const resourceType = type === "photo" || type === "image" ? "image" : "auto";
+      const uploadResult = await uploadChatMedia(source, userId, resourceType);
+
+      const created = await createMessage({
+        userId,
+        matchId,
+        type: type === "image" ? "photo" : type,
+        content,
+        mediaUrl: uploadResult.secure_url,
+      });
+
+      if (!created) {
+        return res.status(404).json({ success: false, message: "Match not found." });
+      }
+
+      const receiverId = created.conversation.user1Id === userId ? created.conversation.user2Id : created.conversation.user1Id;
+      if (!isUserInMatchRoom(receiverId, created.conversation.matchId)) {
+        await notifyUser({
+          userId: receiverId,
+          type: "new_message",
+          title: "New message",
+          body: notificationBodyForMessage(type, content),
+          data: {
+            matchId: created.conversation.matchId.toString(),
+            senderId: userId.toString(),
+            url: `/app/messages/${created.conversation.matchId.toString()}`,
+          },
+          push: true,
+        });
+      }
+      scheduleUnreadMessageEmail({
+        userId: receiverId,
+        messageId: created.message.id,
+        matchId: created.conversation.matchId,
+        senderId: userId,
+      });
+
+      res.status(201).json({ success: true, message: serializeMessage(created.message, userId) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 messagesRouter.post(
   "/messages/:matchId/voice",
