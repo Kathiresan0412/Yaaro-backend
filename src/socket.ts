@@ -438,6 +438,111 @@ export function attachSocketServer(httpServer: HttpServer) {
       });
     });
 
+    // ---- Call signaling ----
+
+    socket.on("call_invite", safeAsyncHandler(async (payload: { matchId?: string; isVideo?: boolean; callerName?: string; callerPhoto?: string }, ack?: Ack) => {
+      const matchId = parseBigInt(payload?.matchId);
+
+      if (!matchId) {
+        ack?.({ success: false, message: "Match id is invalid." });
+        return;
+      }
+
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
+
+      if (!conversation) {
+        ack?.({ success: false, message: "Match not found." });
+        return;
+      }
+
+      const receiverId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+      const isVideo = payload?.isVideo === true;
+      const callerName = payload?.callerName ?? "Someone";
+      const callerPhoto = payload?.callerPhoto ?? "";
+      const callId = `yaaro_call_${matchId.toString()}`;
+
+      // Emit real-time call invitation to the other user via socket
+      io.to(`user:${receiverId.toString()}`).emit("incoming_call", {
+        callId,
+        matchId: matchId.toString(),
+        callerId: userKey,
+        callerName,
+        callerPhoto,
+        isVideo,
+      });
+
+      // Also send push notification so they get it even if app is in background
+      await notifyUser({
+        userId: receiverId,
+        type: "new_message",
+        title: isVideo ? "Incoming Video Call 📹" : "Incoming Voice Call 📞",
+        body: `${callerName} is calling you`,
+        data: {
+          type: "incoming_call",
+          callId,
+          matchId: matchId.toString(),
+          callerId: userKey,
+          callerName,
+          callerPhoto,
+          isVideo: isVideo.toString(),
+        },
+        push: true,
+      });
+
+      ack?.({ success: true, callId });
+    }));
+
+    socket.on("call_accept", safeAsyncHandler(async (payload: { matchId?: string; callId?: string }) => {
+      const matchId = parseBigInt(payload?.matchId);
+
+      if (!matchId) return;
+
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
+      if (!conversation) return;
+
+      const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+
+      io.to(`user:${otherUserId.toString()}`).emit("call_accepted", {
+        callId: payload?.callId ?? `yaaro_call_${matchId.toString()}`,
+        matchId: matchId.toString(),
+        acceptedBy: userKey,
+      });
+    }));
+
+    socket.on("call_reject", safeAsyncHandler(async (payload: { matchId?: string; callId?: string }) => {
+      const matchId = parseBigInt(payload?.matchId);
+
+      if (!matchId) return;
+
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
+      if (!conversation) return;
+
+      const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+
+      io.to(`user:${otherUserId.toString()}`).emit("call_rejected", {
+        callId: payload?.callId ?? `yaaro_call_${matchId.toString()}`,
+        matchId: matchId.toString(),
+        rejectedBy: userKey,
+      });
+    }));
+
+    socket.on("call_end", safeAsyncHandler(async (payload: { matchId?: string; callId?: string }) => {
+      const matchId = parseBigInt(payload?.matchId);
+
+      if (!matchId) return;
+
+      const conversation = await getConversationByIdOrMatchId(userId, matchId);
+      if (!conversation) return;
+
+      const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+
+      io.to(`user:${otherUserId.toString()}`).emit("call_ended", {
+        callId: payload?.callId ?? `yaaro_call_${matchId.toString()}`,
+        matchId: matchId.toString(),
+        endedBy: userKey,
+      });
+    }));
+
     socket.on("disconnect", safeAsyncHandler(async () => {
       const count = Math.max((onlineUsers.get(userKey) ?? 1) - 1, 0);
 
