@@ -263,7 +263,8 @@ async function displayNameForUser(userId: bigint) {
 discoveryRouter.get("/discover/nearby", async (req: AuthenticatedRequest, res, next) => {
   try {
     const viewerId = currentUserId(req);
-    const NEARBY_RADIUS_KM = 50;
+    // Allow client to pass radius (in km) — default 200km for broader map view
+    const NEARBY_RADIUS_KM = decimalToNumber(req.query.radius) ?? 200;
 
     const viewer = await prisma.user.findUnique({
       where: { id: viewerId },
@@ -326,7 +327,7 @@ discoveryRouter.get("/discover/nearby", async (req: AuthenticatedRequest, res, n
         location: true,
         profile: true,
       },
-      take: 100,
+      take: 200,
     });
 
     const users: Array<Record<string, unknown>> = [];
@@ -334,8 +335,27 @@ discoveryRouter.get("/discover/nearby", async (req: AuthenticatedRequest, res, n
     for (const candidate of candidates) {
       if (!candidate.profile || !candidate.location) continue;
 
-      const candidateLat = effectiveLatitude(candidate.location);
-      const candidateLng = effectiveLongitude(candidate.location);
+      let candidateLat = effectiveLatitude(candidate.location);
+      let candidateLng = effectiveLongitude(candidate.location);
+
+      // If user has city but no coordinates, try to geocode and backfill
+      if ((candidateLat === null || candidateLng === null) && candidate.location.city) {
+        const { geocodeCity } = await import("../services/geocoding.service");
+        const geocoded = await geocodeCity(
+          candidate.location.city,
+          candidate.location.country ?? "",
+        );
+        if (geocoded) {
+          candidateLat = geocoded.latitude;
+          candidateLng = geocoded.longitude;
+          // Backfill the coordinates in DB (fire-and-forget)
+          prisma.userLocation.update({
+            where: { userId: candidate.id },
+            data: { latitude: geocoded.latitude, longitude: geocoded.longitude },
+          }).catch(() => {});
+        }
+      }
+
       if (candidateLat === null || candidateLng === null) continue;
 
       const distanceKm = haversineKm(viewerLat, viewerLng, candidateLat, candidateLng);
@@ -364,6 +384,8 @@ discoveryRouter.get("/discover/nearby", async (req: AuthenticatedRequest, res, n
         distanceKm: Math.round(distanceKm * 10) / 10,
         bio: candidate.onboardingProfile?.bio ?? null,
         interests: hobbies.slice(0, 5),
+        city: candidate.location.city ?? null,
+        country: candidate.location.country ?? null,
       });
     }
 

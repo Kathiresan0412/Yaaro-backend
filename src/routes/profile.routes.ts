@@ -1,3 +1,4 @@
+import { geocodeCity } from "../services/geocoding.service";
 import { Router, type NextFunction, type Response } from "express";
 import type { Gender, UserProfile } from "@prisma/client";
 import { prisma } from "../config/database";
@@ -805,13 +806,22 @@ profileRouter.put("/preferences", async (req: AuthenticatedRequest, res, next) =
 profileRouter.put("/location", async (req: AuthenticatedRequest, res, next) => {
   try {
     const currentUserId = userId(req);
-    const latitude = req.body.latitude === null || req.body.latitude === undefined ? null : Number(req.body.latitude);
-    const longitude = req.body.longitude === null || req.body.longitude === undefined ? null : Number(req.body.longitude);
+    let latitude = req.body.latitude === null || req.body.latitude === undefined ? null : Number(req.body.latitude);
+    let longitude = req.body.longitude === null || req.body.longitude === undefined ? null : Number(req.body.longitude);
     const city = cleanString(req.body.city, 120);
     const country = cleanString(req.body.country, 120);
 
     if (!city && (!Number.isFinite(latitude) || !Number.isFinite(longitude))) {
       return res.status(400).json({ success: false, message: "Share your location or enter a city." });
+    }
+
+    // Auto-geocode: if city is provided but coordinates are missing, resolve via Nominatim
+    if (city && (!Number.isFinite(latitude) || !Number.isFinite(longitude))) {
+      const geocoded = await geocodeCity(city, country ?? "");
+      if (geocoded) {
+        latitude = geocoded.latitude;
+        longitude = geocoded.longitude;
+      }
     }
 
     const location = await prisma.userLocation.upsert({
@@ -907,6 +917,16 @@ export async function completeOnboarding(
           country: "United States",
         },
       });
+    } else if (location.city && (location.latitude === null || location.longitude === null)) {
+      // User has city/country from onboarding but no coordinates — geocode them
+      const { geocodeCity } = await import("../services/geocoding.service");
+      const geocoded = await geocodeCity(location.city, location.country ?? "");
+      if (geocoded) {
+        location = await prisma.userLocation.update({
+          where: { userId: currentUserId },
+          data: { latitude: geocoded.latitude, longitude: geocoded.longitude },
+        });
+      }
     }
 
     const user = await prisma.user.update({
