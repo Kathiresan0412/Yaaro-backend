@@ -5,6 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middl
 import { addDays, getUserCapabilities, getUserTier, hasTier } from "../services/premium.service";
 import { notifyUser } from "../services/notification.service";
 import { cacheGet, cacheSet, cacheDel, CacheTTL } from "../services/cache.service";
+import { geocodeCity } from "../services/geocoding.service";
 
 export const discoveryRouter = Router();
 
@@ -340,7 +341,6 @@ discoveryRouter.get("/discover/nearby", async (req: AuthenticatedRequest, res, n
 
       // If user has city but no coordinates, try to geocode and backfill
       if ((candidateLat === null || candidateLng === null) && candidate.location.city) {
-        const { geocodeCity } = await import("../services/geocoding.service");
         const geocoded = await geocodeCity(
           candidate.location.city,
           candidate.location.country ?? "",

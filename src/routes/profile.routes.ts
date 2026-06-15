@@ -919,7 +919,6 @@ export async function completeOnboarding(
       });
     } else if (location.city && (location.latitude === null || location.longitude === null)) {
       // User has city/country from onboarding but no coordinates — geocode them
-      const { geocodeCity } = await import("../services/geocoding.service");
       const geocoded = await geocodeCity(location.city, location.country ?? "");
       if (geocoded) {
         location = await prisma.userLocation.update({
