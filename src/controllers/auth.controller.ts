@@ -632,6 +632,13 @@ export async function oauthLogin(req: Request, res: Response) {
       oauthId,
       emailVerified: true,
       onboardingCompleted: false,
+      profile: {
+        create: {
+          nameEn: `${firstName} ${lastName}`,
+          gender: "other",
+          dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+        },
+      },
     },
     select: {
       id: true,

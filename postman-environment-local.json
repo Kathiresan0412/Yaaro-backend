@@ -1,0 +1,73 @@
+{
+  "id": "yaaro0-local-env",
+  "name": "Yaaro0 - Local",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "userId",
+      "value": "77",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "matchId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "messageId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "photoId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "notificationId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "requestId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "reportId",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "verificationToken",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

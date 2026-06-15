@@ -1,0 +1,1231 @@
+{
+  "info": {
+    "name": "Yaaro0 Backend API",
+    "description": "Complete API collection for the Yaaro0 dating app backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/health",
+            "auth": { "type": "noauth" }
+          }
+        },
+        {
+          "name": "Database Health",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/health/db",
+            "auth": { "type": "noauth" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/register",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"email\": \"john@example.com\",\n  \"password\": \"Password@123\",\n  \"dateOfBirth\": \"2000-01-15\",\n  \"gender\": \"male\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.accessToken) pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/login",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"Password@123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "OAuth Login (Google)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.accessToken) pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/oauth/google",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oauthId\": \"google-oauth-id-123\",\n  \"email\": \"user@gmail.com\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\"\n}"
+            }
+          }
+        },
+        {
+          "name": "OAuth Login (Facebook)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.accessToken) pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/oauth/facebook",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oauthId\": \"fb-oauth-id-123\",\n  \"email\": \"user@facebook.com\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\"\n}"
+            }
+          }
+        },
+        {
+          "name": "OAuth Login (TikTok)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.accessToken) pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/oauth/tiktok",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oauthId\": \"tiktok-oauth-id-123\",\n  \"email\": \"user@tiktok.com\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Firebase Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.accessToken) pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/firebase",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"firebase-id-token\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/verify-email/{{verificationToken}}",
+            "auth": { "type": "noauth" }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.accessToken) pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/refresh",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/logout",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/forgot-password",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/reset-password",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"reset-token-here\",\n  \"password\": \"NewPassword@123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Password Status",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/password-status"
+          }
+        },
+        {
+          "name": "Set Password (OAuth users)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/set-password",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"NewPassword@123\",\n  \"confirmPassword\": \"NewPassword@123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/change-password",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Password@123\",\n  \"newPassword\": \"NewPassword@456\",\n  \"confirmPassword\": \"NewPassword@456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.token) pm.collectionVariables.set('accessToken', json.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/admin/login",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@yaaro0.com\",\n  \"password\": \"AdminPassword@123\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Profile",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/profile/me"
+          }
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/profile/me",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"John D\",\n  \"headline\": \"Love nature and travel\",\n  \"bio\": \"Looking for meaningful connections\",\n  \"heightCm\": 175,\n  \"bodyType\": \"Athletic\",\n  \"education\": \"Bachelor's degree\",\n  \"jobTitle\": \"Software Engineer\",\n  \"company\": \"Tech Corp\",\n  \"industry\": \"Technology\",\n  \"religion\": \"Hindu\",\n  \"smoking\": \"Never\",\n  \"drinking\": \"Socially\",\n  \"exercise\": \"Often\",\n  \"relationshipGoal\": \"Life partner\",\n  \"hobbies\": [\"Travel\", \"Gaming\", \"Photography\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Profile Completeness",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/profile/completeness"
+          }
+        },
+        {
+          "name": "Profile Analytics",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/profile/analytics"
+          }
+        },
+        {
+          "name": "Get Photos",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/profile/photos"
+          }
+        },
+        {
+          "name": "Upload Photo",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/profile/photos",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imageDataUrl\": \"data:image/jpeg;base64,...\",\n  \"photo\": \"data:image/jpeg;base64,...\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Photo",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/profile/photos/{{photoId}}"
+          }
+        },
+        {
+          "name": "Reorder Photos",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/profile/photos/reorder",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"photoIds\": [\"1\", \"2\", \"3\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Set Primary Photo",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/profile/photos/{{photoId}}/primary",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Update Preferences",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/profile/preferences",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"showGender\": \"everyone\",\n  \"minAge\": 18,\n  \"maxAge\": 35,\n  \"maxDistanceKm\": 100,\n  \"globalMode\": false,\n  \"showVerifiedOnly\": false,\n  \"showPhotosOnly\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Location",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/profile/location",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 9.6615,\n  \"longitude\": 80.0255,\n  \"city\": \"Jaffna\",\n  \"country\": \"Sri Lanka\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Spotify Anthem",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/profile/anthem",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotifyAnthemId\": \"spotify-track-id\",\n  \"spotifyAnthemName\": \"Song Name\",\n  \"artist\": \"Artist Name\",\n  \"spotifyPreviewUrl\": \"https://p.scdn.co/...\",\n  \"spotifyAlbumArtUrl\": \"https://i.scdn.co/...\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Complete Onboarding",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/profile/onboarding/complete",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Discovery",
+      "item": [
+        {
+          "name": "Get Discovery Cards",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/discover"
+          }
+        },
+        {
+          "name": "Get Nearby Users",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/discover/nearby?lat=9.6615&lng=80.0255",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "discover", "nearby"],
+              "query": [
+                { "key": "lat", "value": "9.6615" },
+                { "key": "lng", "value": "80.0255" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Swipe (Like)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/swipe",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_user_id\": \"78\",\n  \"action\": \"like\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Swipe (Pass)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/swipe",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_user_id\": \"78\",\n  \"action\": \"pass\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Swipe (Superlike)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/swipe",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_user_id\": \"78\",\n  \"action\": \"superlike\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Undo Swipe",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/swipe/undo",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Explore",
+      "item": [
+        {
+          "name": "Get Categories",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/explore/categories"
+          }
+        },
+        {
+          "name": "Explore Nearby",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/explore/nearby"
+          }
+        },
+        {
+          "name": "Explore by Interest",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/explore/by-interest/Travel"
+          }
+        },
+        {
+          "name": "Explore by Goal",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/explore/by-goal/Life%20partner"
+          }
+        },
+        {
+          "name": "Vibe of the Day",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/explore/vibes/today"
+          }
+        },
+        {
+          "name": "Respond to Vibe",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/explore/vibes/respond",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer\": \"I love hiking in the mountains\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Matches",
+      "item": [
+        {
+          "name": "Get Matches",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/matches"
+          }
+        },
+        {
+          "name": "Delete Match",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/matches/{{matchId}}"
+          }
+        },
+        {
+          "name": "Get User Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/users/{{userId}}/profile"
+          }
+        },
+        {
+          "name": "Get Likes Received",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/likes/received"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "Get Conversations",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/conversations"
+          }
+        },
+        {
+          "name": "Get Messages",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/messages/{{matchId}}?limit=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "messages", "{{matchId}}"],
+              "query": [
+                { "key": "limit", "value": "30" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Send Text Message",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/messages/{{matchId}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Hey! How are you?\",\n  \"type\": \"text\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Send Media Message",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/messages/{{matchId}}/media",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "image", "type": "file", "src": "" },
+                { "key": "type", "value": "photo", "type": "text" },
+                { "key": "content", "value": "", "type": "text" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Send Voice Message",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/messages/{{matchId}}/voice",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "voice", "type": "file", "src": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Message",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/messages/{{messageId}}"
+          }
+        },
+        {
+          "name": "React to Message",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/messages/{{messageId}}/react",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emoji\": \"❤️\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Mark Message Read",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/messages/{{messageId}}/read",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Report Message",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/messages/{{messageId}}/report",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"chat_report\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Premium & Payments",
+      "item": [
+        {
+          "name": "Get Subscription Status",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/payments/subscription"
+          }
+        },
+        {
+          "name": "Create Checkout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/payments/create-checkout",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tier\": \"plus\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Verify Session",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/payments/verify-session",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"cs_test_...\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Cancel Subscription",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/payments/cancel",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Start Boost",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/boost/start",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Super Like",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/super-like",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_user_id\": \"78\",\n  \"message\": \"You seem really interesting!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Top Picks",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/top-picks"
+          }
+        },
+        {
+          "name": "Set Passport Location",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/profile/location/passport",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 51.5074,\n  \"longitude\": -0.1278,\n  \"city\": \"London\",\n  \"country\": \"United Kingdom\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Toggle Incognito",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/profile/preferences/incognito",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incognitoMode\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Safety & Verification",
+      "item": [
+        {
+          "name": "Report User",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/reports",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reportedUserId\": \"78\",\n  \"reason\": \"inappropriate\",\n  \"description\": \"Sending inappropriate content\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Block User",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/users/block/{{userId}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Unblock User",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/users/block/{{userId}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Get Blocked Users",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/users/blocked"
+          }
+        },
+        {
+          "name": "Unmatch",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/users/unmatch/{{matchId}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Get Verification Status",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/verification/status"
+          }
+        },
+        {
+          "name": "Photo Verification",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/verification/photo",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"photo\": \"data:image/jpeg;base64,...\"\n}"
+            }
+          }
+        },
+        {
+          "name": "ID Verification",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/verification/id",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idPhoto\": \"data:image/jpeg;base64,...\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Get Notifications",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/notifications"
+          }
+        },
+        {
+          "name": "Mark All Notifications Read",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/notifications/read",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Mark Notification Read",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/notifications/{{notificationId}}/read",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Push Subscribe",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/push/subscribe",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endpoint\": \"https://fcm.googleapis.com/fcm/send/...\",\n  \"keys\": {\n    \"p256dh\": \"key-here\",\n    \"auth\": \"auth-here\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Push Unsubscribe",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/push/subscribe",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endpoint\": \"https://fcm.googleapis.com/fcm/send/...\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Push Public Key",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/push/public-key"
+          }
+        },
+        {
+          "name": "Get Notification Settings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/settings/notifications"
+          }
+        },
+        {
+          "name": "Update Notification Settings",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/settings/notifications",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notificationTypes\": {\n    \"matches\": true,\n    \"messages\": true,\n    \"likes\": true\n  },\n  \"emailNotifications\": {\n    \"matches\": true,\n    \"messages\": false\n  }\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Spotify",
+      "item": [
+        {
+          "name": "Search Spotify",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/spotify/search?q=love",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "spotify", "search"],
+              "query": [
+                { "key": "q", "value": "love" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "MBTI",
+      "item": [
+        {
+          "name": "Get MBTI Questions",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/mbti/questions"
+          }
+        },
+        {
+          "name": "Submit MBTI Answers",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/mbti/submit",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    { \"questionId\": \"1\", \"answer\": \"a\" },\n    { \"questionId\": \"2\", \"answer\": \"b\" }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Double Date",
+      "item": [
+        {
+          "name": "Get My Pair",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/double-date/me"
+          }
+        },
+        {
+          "name": "Get Available Pairs",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/double-date/pairs"
+          }
+        },
+        {
+          "name": "Create Pair",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/double-date/pairs",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partnerId\": \"78\",\n  \"bio\": \"We love adventures!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Send Double Date Request",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/double-date/requests",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetPairId\": \"5\",\n  \"message\": \"Let's hang out!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Respond to Double Date Request",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/double-date/requests/{{requestId}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"accepted\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Track Event",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/analytics",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"screen_view\",\n  \"properties\": {\n    \"screen\": \"discover\"\n  }\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.token) pm.collectionVariables.set('accessToken', json.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/admin/api/auth/login",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@yaaro0.com\",\n  \"password\": \"AdminPassword@123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/api/dashboard"
+          }
+        },
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/api/users"
+          }
+        },
+        {
+          "name": "Get User Detail",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/api/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Update User Status",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/admin/api/users/{{userId}}/status",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"suspended\",\n  \"reason\": \"Violation of terms\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Reports",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/api/reports"
+          }
+        },
+        {
+          "name": "Resolve Report",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/admin/api/reports/{{reportId}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"resolved\",\n  \"action\": \"warned\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Pending Photos",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/api/photos/pending"
+          }
+        },
+        {
+          "name": "Moderate Photo",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/admin/api/photos/{{photoId}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Settings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/api/settings"
+          }
+        },
+        {
+          "name": "Update Settings",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/admin/api/settings",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"max_daily_likes\",\n  \"value\": \"50\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Broadcast Notification",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/admin/api/broadcast",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"New Feature!\",\n  \"body\": \"Check out our latest update\",\n  \"targetAll\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Audit Log",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/api/audit-log"
+          }
+        }
+      ]
+    }
+  ]
+}

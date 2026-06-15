@@ -116,7 +116,7 @@ async function publicProfile(user: {
   return {
     id: user.id.toString(),
     displayName: displayName(user),
-    age: user.profile ? calculateAge(user.profile.dateOfBirth) : null,
+    age: user.profile?.dateOfBirth ? calculateAge(user.profile.dateOfBirth) : null,
     gender: user.profile?.gender ?? null,
     lastActiveAt: user.lastActiveAt?.toISOString() ?? null,
     isVerified: user.profile?.isVerified ?? false,
@@ -297,7 +297,7 @@ matchesRouter.get("/matches", async (req: AuthenticatedRequest, res, next) => {
         user: {
           id: userIdStr,
           displayName: displayName(matchedUser),
-          age: matchedUser.profile ? calculateAge(matchedUser.profile.dateOfBirth) : null,
+          age: matchedUser.profile?.dateOfBirth ? calculateAge(matchedUser.profile.dateOfBirth) : null,
           mainPhotoUrl: matchedUser.onboardingPhotos[0]?.url ?? null,
           lastActiveAt: matchedUser.lastActiveAt?.toISOString() ?? null,
           isVerified: matchedUser.profile?.isVerified ?? false,
@@ -546,7 +546,7 @@ matchesRouter.get("/likes/received", async (req: AuthenticatedRequest, res, next
         user: {
           id: like.swiper.id.toString(),
           displayName: displayName(like.swiper),
-          age: like.swiper.profile ? calculateAge(like.swiper.profile.dateOfBirth) : null,
+          age: like.swiper.profile?.dateOfBirth ? calculateAge(like.swiper.profile.dateOfBirth) : null,
           mainPhotoUrl: like.swiper.onboardingPhotos[0]?.url ?? null,
           isVerified: like.swiper.profile?.isVerified ?? false,
         },

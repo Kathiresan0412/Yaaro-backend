@@ -12,5 +12,7 @@ export const errorMiddleware: ErrorRequestHandler = (error, _req, res, _next) =>
       debug: error.message,
       stack: error.stack?.split("\n").slice(0, 5),
     }),
+    // Always include a short debug hint for 500 errors so mobile can log it
+    ...(status === 500 && { errorHint: error.message?.slice(0, 200) }),
   });
 };

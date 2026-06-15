@@ -168,7 +168,7 @@ messagesRouter.get("/conversations", async (req: AuthenticatedRequest, res, next
           user: {
             id: otherUser.id.toString(),
             displayName: displayName(otherUser),
-            age: otherUser.profile ? calculateAge(otherUser.profile.dateOfBirth) : null,
+            age: otherUser.profile?.dateOfBirth ? calculateAge(otherUser.profile.dateOfBirth) : null,
             mainPhotoUrl: otherUser.onboardingPhotos[0]?.url ?? null,
             lastActiveAt: otherUser.lastActiveAt?.toISOString() ?? null,
             isVerified: otherUser.profile?.isVerified ?? false,
