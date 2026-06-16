@@ -55,7 +55,7 @@ export async function firebaseLogin(req: Request, res: Response) {
   let decodedToken;
   try {
     const auth = getFirebaseAdmin();
-    decodedToken = await auth.verifyIdToken(idToken);
+    decodedToken = await auth!.auth().verifyIdToken(idToken);
   } catch (error) {
     console.error("Firebase token verification failed:", error);
     return res.status(401).json({ success: false, message: "Invalid or expired Firebase token." });
