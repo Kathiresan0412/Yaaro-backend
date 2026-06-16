@@ -15,6 +15,7 @@ import {
 } from "./services/messaging.service";
 import { hasUnsafeContent } from "./services/content-safety.service";
 import { notifyUser, sendEmail, setNotificationEmitter } from "./services/notification.service";
+import { sendFcmToTokens } from "./config/firebase";
 
 type Ack = (payload: Record<string, unknown>) => void;
 
@@ -471,7 +472,36 @@ export function attachSocketServer(httpServer: HttpServer) {
         isVideo,
       });
 
-      // Also send push notification so they get it even if app is in background
+      // Send FCM push notification to all registered mobile devices for the receiver
+      // This wakes the app even when it's killed/background and shows the call UI
+      const deviceTokens = await prisma.deviceToken.findMany({
+        where: { userId: receiverId },
+        select: { token: true },
+      });
+
+      if (deviceTokens.length > 0) {
+        const tokens = deviceTokens.map((d) => d.token);
+        const fcmData: Record<string, string> = {
+          type: "incoming_call",
+          callId,
+          matchId: matchId.toString(),
+          callerId: userKey,
+          callerName,
+          callerPhoto,
+          isVideo: isVideo.toString(),
+        };
+
+        const failedTokens = await sendFcmToTokens(tokens, fcmData);
+
+        // Clean up invalid tokens
+        if (failedTokens.length > 0) {
+          await prisma.deviceToken.deleteMany({
+            where: { token: { in: failedTokens } },
+          });
+        }
+      }
+
+      // Also save in-app notification as a fallback
       await notifyUser({
         userId: receiverId,
         type: "new_message",
@@ -486,7 +516,7 @@ export function attachSocketServer(httpServer: HttpServer) {
           callerPhoto,
           isVideo: isVideo.toString(),
         },
-        push: true,
+        push: false, // FCM handles the push now
       });
 
       ack?.({ success: true, callId });

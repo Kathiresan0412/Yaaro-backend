@@ -138,6 +138,47 @@ notificationsRouter.get("/push/public-key", (_req, res) => {
   res.json({ success: true, publicKey: env.vapidPublicKey || null });
 });
 
+// ---- Mobile FCM device token registration ----
+
+notificationsRouter.post("/notifications/register-device", async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = currentUserId(req);
+    const fcmToken = typeof req.body.fcmToken === "string" ? req.body.fcmToken.trim() : "";
+    const platform = typeof req.body.platform === "string" ? req.body.platform.trim() : "android";
+
+    if (!fcmToken) {
+      return res.status(400).json({ success: false, message: "fcmToken is required." });
+    }
+
+    // Upsert: if this token already exists, update ownership (handles reinstalls/re-logins)
+    await prisma.deviceToken.upsert({
+      where: { token: fcmToken },
+      update: { userId, platform },
+      create: { userId, token: fcmToken, platform },
+    });
+
+    res.status(201).json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+notificationsRouter.delete("/notifications/unregister-device", async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = currentUserId(req);
+    const fcmToken = typeof req.body.fcmToken === "string" ? req.body.fcmToken.trim() : "";
+
+    if (!fcmToken) {
+      return res.status(400).json({ success: false, message: "fcmToken is required." });
+    }
+
+    await prisma.deviceToken.deleteMany({ where: { userId, token: fcmToken } });
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 notificationsRouter.get("/settings/notifications", async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = currentUserId(req);

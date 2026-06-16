@@ -256,6 +256,7 @@ model User {
   eventsCreated         Event[]        @relation("EventCreator")
   notifications         Notification[]
   pushSubscriptions     PushSubscription[]
+  deviceTokens          DeviceToken[]
   analyticsEvents       AnalyticsEvent[]
 
   @@index([firebaseUid])
@@ -959,6 +960,20 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+model DeviceToken {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @map("user_id")
+  token     String   @unique @db.Text
+  platform  String   @db.VarChar(20) // "android" or "ios"
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
 }
 
 model TopPickBatch {
